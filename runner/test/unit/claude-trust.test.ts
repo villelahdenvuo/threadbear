@@ -966,6 +966,49 @@ test('review 6: too many folders to look through, an args key before command, a 
   assert.equal(reason(), 'unchecked');
 });
 
+test("a folder of repos that isn't a repo itself: each repo is listed by git, so its ignored build folders don't count toward the walk's bound", async () => {
+  const home = tmpDir();
+  const dir = path.join(home, 'repos');
+  const hooks = '---\nname: x\nhooks:\n  Stop:\n    - hooks:\n        - type: command\n          command: say hi\n---\n';
+  const make = (file: string) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, hooks);
+    return file;
+  };
+  const found: string[] = [];
+  for (const name of ['a', 'b']) {
+    const repo = path.join(dir, name);
+    fs.mkdirSync(repo, { recursive: true });
+    git(repo, 'init', '-q', '-b', 'main');
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'dist/\n');
+    // Build output git ignores, which Claude doesn't load skills from.
+    for (let i = 0; i < 40; i++) fs.mkdirSync(path.join(repo, 'dist', `d${i}`), { recursive: true });
+    make(path.join(repo, 'dist', 'd0', '.claude', 'skills', 'ignored', 'SKILL.md'));
+    found.push(make(path.join(repo, '.claude', 'skills', 'own', 'SKILL.md')));
+    found.push(make(path.join(repo, 'pkg', '.claude', 'skills', 'deep', 'SKILL.md')));
+  }
+  // A plain folder beside the repos is still walked.
+  found.push(make(path.join(dir, 'notes', '.claude', 'skills', 'plain', 'SKILL.md')));
+  setMaxWalkForTests(50);
+  try {
+    const got = claudeCommands(dir, home);
+    assert.equal(got?.incomplete, undefined);
+    assert.deepEqual(got?.files, found.sort());
+    // Each repo's listing is kept, and a change in it is seen: a new skill,
+    // and an ignored one that `git add -f` puts in the index.
+    found.push(make(path.join(dir, 'a', 'new', '.claude', 'skills', 'late', 'SKILL.md')));
+    const forced = path.join(dir, 'b', 'dist', 'd0', '.claude', 'skills', 'ignored', 'SKILL.md');
+    git(path.join(dir, 'b'), 'add', '-f', forced);
+    found.push(forced);
+    const want = JSON.stringify(found.sort());
+    const until = Date.now() + 5000;
+    while (JSON.stringify(claudeCommands(dir, home)?.files) !== want && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(claudeCommands(dir, home)?.files, found);
+  } finally {
+    setMaxWalkForTests(20_000);
+  }
+});
+
 test('review 6: a here-doc that looks like a function, an env file by a relative path or a trailing space, a data: URL, npm start with no start script', () => {
   const home = tmpDir();
   const dir = path.join(home, 'app');

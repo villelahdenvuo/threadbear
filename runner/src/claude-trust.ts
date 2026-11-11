@@ -366,7 +366,10 @@ function walkMarkdown(root: string): string[] {
 // matched without case, as macOS finds `skill.md` for `SKILL.md`.
 class TooBig extends Error {}
 
-function nestedSkills(dir: string, depth = 0): { files: string[]; problem?: string } {
+// A skill file at any depth, as `:(glob,icase)**/.claude/skills/**/skill.md`.
+const SKILL_PATH = /(?:^|\/)\.claude\/skills\/(?:[\s\S]*\/)?skill\.md$/i;
+
+function nestedSkills(dir: string, depth = 0, followed?: { links: boolean }): { files: string[]; problem?: string } {
   const git = (...args: string[]): string | undefined => {
     try {
       // Not plain git: the folder's own .git/config could name an fsmonitor
@@ -376,36 +379,45 @@ function nestedSkills(dir: string, depth = 0): { files: string[]; problem?: stri
       return undefined;
     }
   };
-  const listed = git('ls-files', '-co', '--exclude-standard', '-z', '--', ':(glob,icase)**/.claude/skills/**/skill.md');
-  if (listed !== undefined) {
-    const files = listed.split('\0').filter(Boolean).map((f) => path.join(dir, f)).filter(isFile);
+  // Two listings, as each git run costs about 30ms and a folder of
+  // checkouts has a hundred of them: the index (no walk of the files) and
+  // what's not in it and not ignored (one walk).
+  const staged = git('ls-files', '-s', '-z');
+  if (staged !== undefined) {
+    let files: string[] = [];
     // What git doesn't list inside: submodules, and repos of their own in
     // folders it doesn't track, which Claude still looks in.
     const inner = new Set<string>();
     // And links to folders, which Claude goes through and git doesn't.
     const links = new Set<string>();
-    const staged = git('ls-files', '-s', '-z');
     const others = git('ls-files', '-o', '--exclude-standard', '-z');
-    if (staged === undefined || others === undefined) return { files, problem: "git couldn't list the folder's files, so Threadbear can't tell which skills Claude would load." };
     for (const line of staged.split('\0')) {
-      const m = /^(160000|120000) [0-9a-f]+ \d+\t([\s\S]+)$/.exec(line);
-      if (m) (m[1] === '160000' ? inner : links).add(path.join(dir, m[2]));
+      const m = /^(\d{6}) [0-9a-f]+ \d+\t([\s\S]+)$/.exec(line);
+      if (!m) continue;
+      if (m[1] === '160000') inner.add(path.join(dir, m[2]));
+      else if (m[1] === '120000') links.add(path.join(dir, m[2]));
+      if (SKILL_PATH.test(m[2])) files.push(path.join(dir, m[2]));
     }
+    if (others === undefined) return { files: files.filter(isFile), problem: "git couldn't list the folder's files, so Threadbear can't tell which skills Claude would load." };
     for (const f of others.split('\0')) {
       if (!f) continue;
       if (f.endsWith('/') && fs.existsSync(path.join(dir, f, '.git'))) inner.add(path.join(dir, f.slice(0, -1)));
+      else if (SKILL_PATH.test(f)) files.push(path.join(dir, f));
       else if (isLink(path.join(dir, f))) links.add(path.join(dir, f));
     }
+    // Listed but gone from the folder, or not a file.
+    files = files.filter(isFile);
     for (const l of links) {
       if (!isLink(l) || !isDir(l)) continue;
-      const sub = walkForSkills(l, true);
+      if (followed) followed.links = true;
+      const sub = walkForSkills(l, true, depth);
       files.push(...sub.files);
       if (sub.problem) return { files, problem: sub.problem };
     }
     for (const d of inner) {
       if (!isDir(d)) continue;
       if (depth >= 4 || inner.size > 200) return { files, problem: 'the folder has more nested repositories than Threadbear looks through for skills Claude would load.' };
-      const sub = nestedSkills(d, depth + 1);
+      const sub = nestedSkills(d, depth + 1, followed);
       files.push(...sub.files);
       if (sub.problem) return { files, problem: sub.problem };
       // A sub-repo's own top-level skills too, which the call above leaves to its caller.
@@ -413,15 +425,19 @@ function nestedSkills(dir: string, depth = 0): { files: string[]; problem?: stri
     }
     return { files };
   }
-  // Not a git checkout (or git failed): look through the folders.
-  return walkForSkills(dir, false);
+  // Not a git checkout (or git failed): look through the folders, links
+  // and all, which a watch can't vouch for.
+  if (followed) followed.links = true;
+  return walkForSkills(dir, false, depth);
 }
 
 // The skill files in `.claude/skills` folders under `root` (its own too
 // with `self`, or when it's a skills folder by a link), all but
 // node_modules (left out, or every folder with packages in it would be too
-// big to look through), following links to folders as Claude does.
-function walkForSkills(root: string, self: boolean): { files: string[]; problem?: string } {
+// big to look through), following links to folders as Claude does. A repo
+// found under it is listed by git, as above: a folder of checkouts would
+// be too big to walk with their build output, which Claude skips anyway.
+function walkForSkills(root: string, self: boolean, depth = 0): { files: string[]; problem?: string } {
   const files: string[] = [];
   const base = path.basename(root).toLowerCase();
   if (self && base === 'skills' && path.basename(path.dirname(root)).toLowerCase() === '.claude') return { files: skillFiles(root) };
@@ -429,6 +445,7 @@ function walkForSkills(root: string, self: boolean): { files: string[]; problem?
   const queue = [root];
   const seenDirs = new Set<string>();
   let seen = 0;
+  let repos = 0;
   while (queue.length) {
     if (++seen > MAX_WALK) return { files, problem: `the folder has more than ${MAX_WALK} folders, too many to look through for skills Claude would load.` };
     const d = queue.shift()!;
@@ -446,10 +463,83 @@ function walkForSkills(root: string, self: boolean): { files: string[]; problem?
       if (!(e.isDirectory() || (e.isSymbolicLink() && isDir(p))) || e.name === '.git' || e.name === 'node_modules') continue;
       if (e.name.toLowerCase() === '.claude') {
         if (d !== root || self) files.push(...skillFiles(path.join(p, 'skills')));
+      } else if (fs.existsSync(path.join(p, '.git'))) {
+        if (depth >= 4 || ++repos > 200) return { files, problem: 'the folder has more nested repositories than Threadbear looks through for skills Claude would load.' };
+        const sub = watchedNestedSkills(p, depth + 1);
+        files.push(...sub.files);
+        if (sub.problem) return { files, problem: sub.problem };
+        // The repo's own top-level skills too, which nestedSkills leaves to its caller.
+        files.push(...skillFiles(path.join(p, '.claude', 'skills')));
       } else queue.push(p);
     }
   }
   return { files };
+}
+
+// A repo's nested skills, as the walk above finds it in a folder of
+// checkouts, kept until something under it changes. Listing each repo
+// costs two git runs, and ~/Documents/Grano/repot has about 125 of them
+// (the worktrees too): 6 s for every message and every edit there (11 Nov
+// 2026). A watch on the folder drops the entry on any change in it, and
+// the git index (where `git add` writes, outside a worktree's folder) is
+// checked by its time. Not kept: what went through a link (the watch
+// can't see past it) or had a problem.
+type Listed = { files: string[]; problem?: string };
+const watched = new Map<string, { listed: Listed; index?: number; watcher: fs.FSWatcher }>();
+const MAX_WATCHED = 500;
+
+function watchedNestedSkills(dir: string, depth: number): Listed {
+  const key = `${depth}\0${dir}`;
+  const hit = watched.get(key);
+  if (hit && hit.index === indexTime(dir)) return hit.listed;
+  if (hit) forget(key);
+  let changed = false;
+  let watcher: fs.FSWatcher | undefined;
+  try {
+    watcher = fs.watch(dir, { recursive: true, persistent: false }, (_event, name) => {
+      // git's own churn, which says nothing of the files.
+      if (name && /^\.git[\\/](objects|logs|refs)[\\/]/.test(String(name))) return;
+      changed = true;
+      forget(key);
+    });
+    watcher.on('error', () => {
+      changed = true;
+      forget(key);
+    });
+  } catch {
+    watcher = undefined;
+  }
+  const index = indexTime(dir);
+  const followed = { links: false };
+  const listed = nestedSkills(dir, depth, followed);
+  if (!watcher || changed || followed.links || listed.problem) {
+    watcher?.close();
+    return listed;
+  }
+  watched.set(key, { listed, index, watcher });
+  if (watched.size > MAX_WATCHED) forget(watched.keys().next().value!);
+  return listed;
+}
+
+function forget(key: string): void {
+  watched.get(key)?.watcher.close();
+  watched.delete(key);
+}
+
+// When the repo's git index last changed: `.git/index`, or for a worktree
+// or submodule the one in the folder its `.git` file names.
+function indexTime(dir: string): number | undefined {
+  try {
+    let git = path.join(dir, '.git');
+    if (fs.statSync(git).isFile()) {
+      const m = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(git, 'utf8'));
+      if (!m) return undefined;
+      git = path.resolve(dir, m[1]);
+    }
+    return fs.statSync(path.join(git, 'index')).mtimeMs;
+  } catch {
+    return undefined;
+  }
 }
 
 function isLink(p: string): boolean {
