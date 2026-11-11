@@ -255,3 +255,19 @@ test('nodeBeforeLaunch: the Node a LaunchAgent or unit starts launch.mjs with', 
   // Compared as the caller says (deploy.mjs resolves links).
   assert.equal(steps.nodeBeforeLaunch([node, '/private/x/launch.mjs'], '/x/launch.mjs', (a: string, b: string) => a.replace('/private', '') === b), node);
 });
+
+// An npm ci cut off partway (the runner restarting under it, 11 Nov) leaves
+// node_modules with the packages but no .bin or .package-lock.json, and the
+// typecheck then failed with "tsc: command not found" on every try.
+test('packagesInstalled: only a finished npm install counts', () => {
+  const dir = tmpDir('tb-deploy-pkgs-');
+  try {
+    assert.equal(steps.packagesInstalled(dir), false);
+    fs.mkdirSync(path.join(dir, 'node_modules', 'typescript'), { recursive: true });
+    assert.equal(steps.packagesInstalled(dir), false);
+    fs.writeFileSync(path.join(dir, 'node_modules', '.package-lock.json'), '{}\n');
+    assert.equal(steps.packagesInstalled(dir), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

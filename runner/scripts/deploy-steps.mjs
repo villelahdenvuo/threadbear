@@ -10,6 +10,14 @@ import path from 'node:path';
 // A failure with a message for whoever ran the script; no stack trace.
 export class Fail extends Error {}
 
+// Whether <dir>/node_modules holds a finished install. npm writes
+// node_modules/.package-lock.json last, so an npm ci cut off partway (the
+// runner restarting under it) leaves packages without it, and without .bin:
+// the typecheck then failed with "tsc: command not found" every time (11 Nov).
+export function packagesInstalled(dir) {
+  return fs.existsSync(path.join(dir, 'node_modules', '.package-lock.json'));
+}
+
 // A step that didn't exit 0, with where its output went.
 export class StepFailed extends Fail {
   constructor(message, logFile, status) {
