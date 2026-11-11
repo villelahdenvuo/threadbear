@@ -1185,8 +1185,10 @@ private struct ImagePanel: View {
 // MARK: - List panels
 
 /// A `list` panel: the rows its patch's `items` function gives, asked for
-/// when it's shown and every 15 seconds while it is. A row with a link or a
-/// file opens it the way a highlight does.
+/// when it's shown and every 15 seconds while it is. The rows it last had
+/// for a thread show at once when that thread is opened again, rather than
+/// "Loading…" until the runner answers (`AppModel.listPanelRows`). A row
+/// with a link or a file opens it the way a highlight does.
 private struct ListPanel: View {
     @Environment(AppModel.self) private var app
     let thread: ThreadSummary
@@ -1215,11 +1217,19 @@ private struct ListPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: "\(thread.id)/\(panel.id)") {
-            render = nil
+            let key = "\(thread.id)/\(panel.id)"
+            render = app.listPanelRows[key]
+            #if DEBUG
+            PanelDebug.note(panel.id, render, image: nil)
+            #endif
             while !Task.isCancelled {
                 let result = await app.renderPanel(threadId: thread.id, panelId: panel.id, failure: "Couldn't get this list from the runner.")
                 if Task.isCancelled { return }
                 render = result ?? PanelRender(note: "Not connected to the runner.")
+                if let result, result.items?.isEmpty == false {
+                    if app.listPanelRows.count >= 200 { app.listPanelRows.removeAll() }
+                    app.listPanelRows[key] = result
+                }
                 #if DEBUG
                 PanelDebug.note(panel.id, render, image: nil)
                 #endif

@@ -1094,7 +1094,9 @@ async function dispatch(client, method, p) {
       const panel = (t.summary.panels ?? []).find((x) => x.id === p.panelId);
       if (!panel) throw rpcError(-32602, `This thread has no panel called ${p.panelId}`);
       if (panel.kind === 'list') {
-        await new Promise((r) => setTimeout(r, 200));
+        // THREADBEAR_MOCK_PANEL_DELAY_MS: answer late, to see a list panel
+        // keep its last rows on a thread switch.
+        await new Promise((r) => setTimeout(r, Number(process.env.THREADBEAR_MOCK_PANEL_DELAY_MS ?? 200)));
         return { items: panel.mockItems ?? [] };
       }
       if (panel.kind !== 'image') return { note: 'This panel has nothing to render.' };

@@ -232,6 +232,10 @@ final class AppModel {
     /// account doesn't clear the status, so this is how the limit line
     /// knows the new account isn't the one that ran out.
     @ObservationIgnored var failedOnAccount: [String: String] = [:]
+    /// A list panel's last rows, by "<thread id>/<panel id>", so switching
+    /// back to a thread shows them at once while fresh ones are asked for
+    /// (ListPanel). Only renders with rows; cleared when it grows past 200.
+    @ObservationIgnored var listPanelRows: [String: PanelRender] = [:]
     // These four are where the window is; a change to any of them is a
     // step in the back/forward history (Navigation.swift).
     var selection: String? {
