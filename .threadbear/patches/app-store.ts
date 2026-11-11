@@ -85,7 +85,16 @@ export default {
           return false;
         }
       },
-      badge: async ({ sh }: Ctx) => ((await versions(sh))[0] && needsMike((await versions(sh))[0].state) ? 1 : 0),
+      // Runs even while `when` hides the panel, so it catches too: in a fork
+      // there's no script, and a throw here showed as the patch failing.
+      badge: async ({ sh }: Ctx) => {
+        try {
+          const latest = (await versions(sh))[0];
+          return latest && needsMike(latest.state) ? 1 : 0;
+        } catch {
+          return 0;
+        }
+      },
       items: async ({ sh }: Ctx) =>
         (await versions(sh)).slice(0, 3).map((v) => ({
           title: v.version,

@@ -43,6 +43,9 @@ test("a fork's own patches show nothing of Mike's", async () => {
   };
   const set = await applyLive(base, { cwd: copy, threadId: 'fork-view', run });
 
+  // A hidden item's other functions still run: app-store's badge called
+  // Mike's script with no catch, and every fork's Patches showed it failing.
+  assert.deepEqual(set.patches.filter((p) => p.liveError).map((p) => `${p.id}: ${p.liveError}`), []);
   const shown = JSON.stringify([set.actions, set.panels]);
   for (const mark of MIKES) assert.doesNotMatch(shown, mark);
   assert.deepEqual(
