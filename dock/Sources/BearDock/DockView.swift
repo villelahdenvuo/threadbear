@@ -526,10 +526,12 @@ struct GroupHeader: View {
                     .contextMenu { PanelMenu(panel: group.selected, tabbed: false) }
                     // Its full width before the empty bar beside it gets any.
                     .layoutPriority(1)
+            } else if single {
+                TabItem(panel: group.selected, selected: true, single: true)
             } else {
-                ForEach(group.panels, id: \.self) { panel in
-                    TabItem(panel: panel, selected: panel == group.selected, single: single)
-                }
+                TabStrip(group: group)
+                    // Room for every tab before the empty bar beside them gets any.
+                    .layoutPriority(1)
             }
             BarSpace(panel: group.selected, tabbed: !single)
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(DockSpace.name)).minX } action: { controller.barSpaceStarts[group.id] = $0 }
@@ -555,6 +557,67 @@ struct GroupHeader: View {
             controller.bars[group.id] = nil
             controller.barSpaceStarts[group.id] = nil
         }
+    }
+}
+
+/// A group's tabs. When they don't all fit in the bar they scroll sideways
+/// (trackpad, or Shift and the wheel), the selected one is kept in view, and
+/// a menu at the end lists every tab, so a mouse can reach any of them. Before,
+/// the tabs past the bar's edge were clipped and couldn't be clicked.
+private struct TabStrip: View {
+    let group: DockGroup
+    @Environment(DockController.self) private var controller
+    @Environment(\.dockContent) private var content
+    @Environment(\.dockOptions) private var options
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            tabs
+            HStack(spacing: 2) {
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) { tabs }
+                        .onAppear { reader.scrollTo(group.selected) }
+                        .onChange(of: group.selected) { _, selected in
+                            withAnimation(.easeOut(duration: 0.15)) { reader.scrollTo(selected) }
+                        }
+                }
+                overflowMenu
+            }
+        }
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 2) {
+            ForEach(group.panels, id: \.self) { panel in
+                TabItem(panel: panel, selected: panel == group.selected, single: false)
+                    .id(panel)
+            }
+        }
+    }
+
+    private var overflowMenu: some View {
+        Menu {
+            ForEach(group.panels, id: \.self) { panel in
+                Button {
+                    controller.select(panel)
+                } label: {
+                    if panel == group.selected {
+                        Label(content.title(panel), systemImage: "checkmark")
+                    } else {
+                        Text(content.title(panel))
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: options.titleSize - 3, weight: .semibold))
+                .foregroundStyle(DockTheme.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .padding(.horizontal, 4)
+        .dockTip("All \(group.panels.count) tabs", options)
     }
 }
 
