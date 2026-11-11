@@ -561,7 +561,7 @@ struct GroupHeader: View {
 }
 
 /// A group's tabs. When they don't all fit in the bar they scroll sideways
-/// (trackpad, or Shift and the wheel), the selected one is kept in view, and
+/// (trackpad, or a mouse wheel: WheelSideways), the selected one is kept in view, and
 /// a menu at the end lists every tab, so a mouse can reach any of them. Before,
 /// the tabs past the bar's edge were clipped and couldn't be clicked.
 private struct TabStrip: View {
@@ -576,6 +576,7 @@ private struct TabStrip: View {
             HStack(spacing: 2) {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) { tabs }
+                        .overlay { WheelSideways() }
                         .onAppear { reader.scrollTo(group.selected) }
                         .onChange(of: group.selected) { _, selected in
                             withAnimation(.easeOut(duration: 0.15)) { reader.scrollTo(selected) }
@@ -929,6 +930,58 @@ private struct MiddleClick: NSViewRepresentable {
             let screen = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
             guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber else { return false }
             return bounds.contains(convert(window.convertPoint(fromScreen: screen), from: nil))
+        }
+    }
+}
+
+/// Over a tab strip that scrolls, turns a mouse wheel's up-and-down into
+/// sideways, as a sideways-only scroll view ignores it and a mouse has no
+/// other way to scroll it. A trackpad's swipe, Shift and the wheel, or a tilt
+/// wheel already go sideways and pass through as they are. Watches the app's
+/// wheel events the way MiddleClick watches clicks, and never takes part in
+/// hit-testing.
+struct WheelSideways: NSViewRepresentable {
+    func makeNSView(context: Context) -> WheelView { WheelView() }
+    func updateNSView(_ view: WheelView, context: Context) {}
+
+    /// The same turn as a sideways scroll, or nil when it should pass as it is.
+    static func sideways(_ event: NSEvent) -> NSEvent? {
+        // A trackpad or Magic Mouse marks its scrolls with a phase; a wheel
+        // doesn't, smooth-scrolling mouse drivers that send pixels included.
+        guard event.phase.isEmpty, event.momentumPhase.isEmpty, event.scrollingDeltaX == 0, event.scrollingDeltaY != 0,
+              let cg = event.cgEvent?.copy() else { return nil }
+        let pairs: [(CGEventField, CGEventField)] = [
+            (.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2),
+            (.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2),
+        ]
+        for (vertical, horizontal) in pairs {
+            cg.setIntegerValueField(horizontal, value: cg.getIntegerValueField(vertical))
+            cg.setIntegerValueField(vertical, value: 0)
+        }
+        cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: cg.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1))
+        cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
+        return NSEvent(cgEvent: cg)
+    }
+
+    final class WheelView: NSView {
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, self.contains(event) else { return event }
+                return WheelSideways.sideways(event) ?? event
+            }
+        }
+
+        private func contains(_ event: NSEvent) -> Bool {
+            guard let window, event.window === window, !isHiddenOrHasHiddenAncestor else { return false }
+            return bounds.contains(convert(event.locationInWindow, from: nil))
         }
     }
 }
