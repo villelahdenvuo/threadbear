@@ -4,17 +4,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { makeHarness, tmpDir } from '../helpers/fakes.ts';
-import { inBackground, TASKPOLICY } from '../../src/background.ts';
+import { heavyWorkPriority, inBackground, NICE, TASKPOLICY } from '../../src/background.ts';
 import { runCommand } from '../../src/patches.ts';
 import { land } from '../../src/worktrees.ts';
 
 // Builds and tests Threadbear spawns itself run at background priority on
 // a Mac (a land's check held Mike's M5 above load 24 on 6 Nov).
 
+// A home of this file's own, so this Mac's runner.json (heavyWorkPriority
+// included) doesn't change what the tests below see.
+const HOME = tmpDir('tb-bg-home-');
+process.env.THREADBEAR_HOME = HOME;
+
 test('inBackground: taskpolicy -b on a Mac that has it, the command as it is elsewhere', () => {
   assert.deepEqual(inBackground('/bin/sh', ['-c', 'x'], { platform: 'darwin', exists: () => true }), [TASKPOLICY, ['-b', '/bin/sh', '-c', 'x']]);
   assert.deepEqual(inBackground('/bin/sh', ['-c', 'x'], { platform: 'darwin', exists: () => false }), ['/bin/sh', ['-c', 'x']]);
   assert.deepEqual(inBackground('/bin/sh', ['-c', 'x'], { platform: 'linux', exists: () => true }), ['/bin/sh', ['-c', 'x']]);
+});
+
+test('inBackground: heavyWorkPriority "low" in runner.json runs it under nice -n 10 on a Mac', () => {
+  const at = { platform: 'darwin' as const, exists: () => true };
+  assert.equal(heavyWorkPriority(), 'background');
+  fs.writeFileSync(path.join(HOME, 'runner.json'), JSON.stringify({ heavyWorkPriority: 'low' }));
+  try {
+    assert.equal(heavyWorkPriority(), 'low');
+    assert.deepEqual(inBackground('/bin/sh', ['-c', 'x'], at), [NICE, ['-n', '10', '/bin/sh', '-c', 'x']]);
+    assert.deepEqual(inBackground('/bin/sh', ['-c', 'x'], { ...at, platform: 'linux' }), ['/bin/sh', ['-c', 'x']]);
+    assert.deepEqual(inBackground('/bin/sh', ['-c', 'x'], { ...at, priority: 'background' }), [TASKPOLICY, ['-b', '/bin/sh', '-c', 'x']]);
+    fs.writeFileSync(path.join(HOME, 'runner.json'), JSON.stringify({ heavyWorkPriority: 'fast' }));
+    assert.equal(heavyWorkPriority(), 'background');
+  } finally {
+    fs.rmSync(path.join(HOME, 'runner.json'), { force: true });
+  }
 });
 
 // A darwin-background process reports scheduling priority 4 in ps (20 is

@@ -70,7 +70,7 @@ gone from your fork, not just quiet.
   another Mac over ssh, put `"checkHost": "<ssh host>"` in your
   runner.json, or `"checkHosts"` with a list of them (Mike's is
   `["tinker-desk", "cloud"]`; a Linux one only takes `--quick` runs that
-  don't touch `ios/`, `app/` or `dock/`); without either, it runs on yours. On your Mac it
+  don't touch `ios/`, `app/` or `dock/`); without either, it runs on yours. A land's check on yours runs in macOS's background lane, which is slow on a busy Mac; `"heavyWorkPriority": "low"` in runner.json runs it under `nice -n 10` instead. On your Mac it
   keeps one ssh connection per host through a socket in `~/.ssh/tbc`, and
   the lock on each checkout's copy in `~/.cache/threadbear-check-locks`,
   both folders only you can use (mode 700, yours; one that's anything else

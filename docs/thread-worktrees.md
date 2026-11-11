@@ -36,7 +36,10 @@ checkout is the one with `main` checked out.
 On a Mac, `setup`, `check` and turn hooks run at background priority
 (`taskpolicy -b`, `runner/src/background.ts`), as do the runner's and the
 app's own update builds, so a land's test suite stays off the cores you're
-using. Action buttons you press run as normal.
+using. Action buttons you press run as normal. To run them under
+`nice -n 10` instead, on every core but still behind what you're using,
+put `"heavyWorkPriority": "low"` in runner.json. It helps a Mac with no
+check host, which runs each land's check itself.
 
 ## A new thread
 
