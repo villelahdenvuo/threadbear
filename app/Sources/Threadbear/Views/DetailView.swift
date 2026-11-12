@@ -480,6 +480,9 @@ private struct ThreadTitleField: View {
                     focused = true
                 }
                 .tip("Return saves, Escape cancels")
+                // Selecting the text is a drag too: without this the bar's
+                // own drag lifted the panel once the press was held (12 Nov).
+                .dockDragDisabled()
         } else {
             Text(thread.title.isEmpty ? "Untitled" : thread.title)
                 .fontWeight(.semibold)
