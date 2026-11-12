@@ -81,8 +81,20 @@ export async function until(check: () => boolean, what: string, ms = PATIENCE_MS
   }
 }
 
+// An empty home folder, not the real one: the real one's own
+// ~/.threadbear/patches loaded beside the repo's, and on a Mac that has some
+// the repo's action wasn't there yet when a test ran it (12 Nov).
 export function harness(): Harness {
-  return makeHarness(undefined, {}, { actionShell: ['/bin/sh', '-c'], actionTimeoutMs: 10_000 });
+  return makeHarness(undefined, {}, { actionShell: ['/bin/sh', '-c'], actionTimeoutMs: 10_000, panelsRoot: tmpDir('tb-wt-home-') });
+}
+
+// Waits for a thread's folder's patches to have loaded: they load in the
+// background, so an action run straight after a thread starts can miss them.
+export async function patchesLoaded(h: Harness, id: string): Promise<void> {
+  const runner = h.runner as any;
+  const st = runner.threads.get(id);
+  runner.patchSet(st);
+  await until(() => st.rt.patches?.loaded === true, "the thread's patches to load");
 }
 
 // Puts a git ahead of the real one on PATH that takes half a second over

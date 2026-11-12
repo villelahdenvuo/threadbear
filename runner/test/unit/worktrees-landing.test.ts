@@ -10,7 +10,7 @@ import { cleanUpWorktree, git, land, landTargetFromGit, makeWorktree, overwritte
 import { RpcServer } from '../../src/rpc.ts';
 import { readToken } from '../../src/config.ts';
 import { nullLogger } from '../../src/log.ts';
-import { PATCH, addBorrowScript, capture, commit, harness, isLocked, lines, makeBranch, makeRepo, notes, runTb, sh, startTb, threadWithWorktree, until, write } from '../helpers/worktrees-harness.ts';
+import { PATCH, addBorrowScript, capture, commit, harness, isLocked, lines, makeBranch, makeRepo, notes, patchesLoaded, runTb, sh, startTb, threadWithWorktree, until, write } from '../helpers/worktrees-harness.ts';
 
 // --------------------------------------------------------------- landing
 
@@ -457,6 +457,7 @@ test("archiving waits for a patch action that's running in the worktree", async 
   const { id, w } = await threadWithWorktree(h, main);
   commit(w.path, { 'runner/b.ts': '2\n' }, 'Landed work');
   assert.equal(await land({ path: w.path, branch: w.branch, mainCheckout: main }, capture().opts), 0);
+  await patchesLoaded(h, id);
   const action = h.runner.runAction(id, 'checks.go');
   await until(() => (h.runner as any).threads.get(id).rt.runningActions?.size === 1, 'the action to start');
   h.runner.update({ threadId: id, archived: true });
@@ -472,6 +473,7 @@ test("an action never runs in a removed worktree's folder made again for someone
   const { id, w } = await threadWithWorktree(h, main);
   commit(w.path, { 'runner/b.ts': '2\n' }, 'Landed work');
   assert.equal(await land({ path: w.path, branch: w.branch, mainCheckout: main }, capture().opts), 0);
+  await patchesLoaded(h, id);
   h.runner.update({ threadId: id, archived: true });
   await until(() => notes(h, id).some((n) => n.startsWith('Removed')), 'the cleanup');
   sh(main, `git worktree add -q --detach ${w.path} main`);
