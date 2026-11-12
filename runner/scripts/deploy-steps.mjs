@@ -18,6 +18,18 @@ export function packagesInstalled(dir) {
   return fs.existsSync(path.join(dir, 'node_modules', '.package-lock.json'));
 }
 
+// Takes away <dir>/node_modules if it's a link, and only the link, so an
+// npm ci there installs its own rather than emptying the folder it points
+// at, which other threads' worktrees share (worktree-setup.sh).
+export function unlinkPackages(dir) {
+  const modules = path.join(dir, 'node_modules');
+  try {
+    if (fs.lstatSync(modules).isSymbolicLink()) fs.unlinkSync(modules);
+  } catch {
+    // not there
+  }
+}
+
 // A step that didn't exit 0, with where its output went.
 export class StepFailed extends Fail {
   constructor(message, logFile, status) {

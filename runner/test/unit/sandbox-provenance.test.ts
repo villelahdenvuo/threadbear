@@ -178,6 +178,41 @@ test('messages, moves, schedules, checks and pins from a sandboxed thread ask on
   assert.equal(s.rec(s.me.id).confined, undefined);
 });
 
+// The sandbox keeps the runner's data folder out; the read tools would hand
+// its contents back in, to a container that can send them anywhere
+// (security review, 12 Nov 2026). Its own thread and schedules stay unasked.
+test("a sandboxed thread's reads of other threads, the logins and every schedule ask; its own don't", async () => {
+  const s = setup();
+  const other = await s.withCard('deny', 'read_thread', { threadId: s.host.id, messages: 100 });
+  assert.equal(other.error, true);
+  assert.equal(other.card.title, 'Read the thread "Host work", outside the sandbox');
+  assert.doesNotMatch(other.text, /Host work\n/);
+  const allowed = await s.withCard('allow', 'read_thread', { threadId: s.host.id });
+  assert.equal(allowed.error, false, allowed.text);
+  assert.match(allowed.text, /Host work/);
+  for (const [name, args, title] of [
+    ['list_threads', {}, "List the user's threads, outside the sandbox"],
+    ['list_accounts', {}, "List the user's logins, outside the sandbox"],
+    ['list_schedules', { all: true }, 'List every schedule, outside the sandbox'],
+  ] as const) {
+    const r = await s.withCard('deny', name, args);
+    assert.equal(r.error, true, name);
+    assert.equal(r.card.title, title);
+  }
+  const own = await s.withCard(null, 'read_thread', {});
+  assert.equal(own.error, false, own.text);
+  await s.withCard(null, 'read_thread', { threadId: s.me.id });
+  await s.withCard(null, 'list_schedules', {});
+  // Outside any sandbox they never ask, in any mode.
+  for (const mode of ['full', 'ask'] as const) {
+    const h = setup({ callerIn: 'host', mode });
+    await h.withCard(null, 'read_thread', { threadId: h.host.id });
+    await h.withCard(null, 'list_threads', {});
+    await h.withCard(null, 'list_accounts', {});
+    await h.withCard(null, 'list_schedules', { all: true });
+  }
+});
+
 test("a sandboxed thread's own patch edits aren't trusted as written: the runner and the Mac would run them outside it", () => {
   const s = setup();
   const session = s.h.adapter.sessions.find((x) => x.opts.threadId === s.me.id)!;

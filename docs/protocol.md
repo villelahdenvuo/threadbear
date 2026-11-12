@@ -1980,7 +1980,8 @@ or a Codex login is refused. A review by another lab of a confined thread
 runs confined, on a login that can (Claude), or isn't done, with a note
 saying why. Its agent counts as restricted
 for the threadbear tools however its mode is set ("Tools for agents",
-"Raising access"), and what it writes in its folder is never trusted as
+"Raising access"), its reads of other threads, the logins and the projects
+ask, and what it writes in its folder is never trusted as
 written: its patches and Claude settings wait for Mike in Patches, as the
 runner and the Mac app would run them outside the sandbox.
 
@@ -6368,7 +6369,12 @@ change something or act elsewhere ask too (`pin`, `show_options` and
 `show_panel` among them, as they can open a URL or a panel that runs
 commands), and the ones that only read or end the turn
 (`NEVER_ASK_TOOLS`: `end_turn`, the list and read tools, `unpin`,
-`ask_secret`) never do, in any mode. No tool can delete, interrupt, snooze
+`ask_secret`) never do, in any mode, except from a sandboxed thread: there
+the reads that reach past it (`read_thread` of another thread,
+`list_threads`, `list_accounts`, `list_schedules` with `all`,
+`list_projects`, `read_project` of a project it isn't in) ask, as they'd
+hand the runner's data folder back to a container that can send it
+anywhere. No tool can delete, interrupt, snooze
 or archive the thread that's calling it; `tb` inside a thread refuses the
 same.
 

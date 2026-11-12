@@ -99,6 +99,32 @@ test('only one runner holds the data dir lock; a dead or recycled holder is take
   }
 });
 
+test("a lock file that's still empty is waited on, not taken: its runner is about to write itself in", async () => {
+  const run = tmpDir();
+  const file = path.join(run, 'runner.pid');
+  // The way an older runner took it: the file first, its pid a moment after.
+  // Named launch.mjs, so with no start time it counts as a runner.
+  const script = path.join(tmpDir(), 'launch.mjs');
+  fs.writeFileSync(script, "import fs from 'node:fs'; const f = process.argv[2]; fs.writeFileSync(f, ''); console.log('made'); setTimeout(() => fs.writeFileSync(f, JSON.stringify({ pid: process.pid, lstart: '' })), 300); setInterval(() => {}, 1000);\n");
+  const holder = spawn(process.execPath, [script, file], { stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    await new Promise((r) => holder.stdout!.once('data', r));
+    assert.deepEqual(acquireLock(run), { heldBy: holder.pid });
+    holder.kill('SIGKILL');
+    await new Promise((r) => holder.once('exit', r));
+    // An empty lock left long ago is taken over.
+    fs.writeFileSync(file, '');
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(file, old, old);
+    const taken = acquireLock(run);
+    assert.ok('release' in taken);
+    taken.release();
+    assert.deepEqual(fs.readdirSync(run), [], 'no temp file left behind');
+  } finally {
+    holder.kill('SIGKILL');
+  }
+});
+
 test('a lock with no start time still counts while a runner under launch.mjs holds it', async () => {
   const run = tmpDir();
   // A release runs as `node <home>/runner/launch.mjs`, not main.ts.

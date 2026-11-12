@@ -103,8 +103,15 @@ test('syncClone brings a clone to main and reports its release tree; docs and te
   assert.equal(fs.readFileSync(path.join(dir, 'runner', 'src', 'main.ts'), 'utf8'), 'console.log(2)\n');
   // node_modules in the clone survives a sync, and goes when the lock changes.
   fs.mkdirSync(path.join(dir, 'runner', 'node_modules', 'left'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'runner', 'node_modules', '.package-lock.json'), '{}\n');
   await syncClone(repo, 'runner/', dir);
   assert.ok(fs.existsSync(path.join(dir, 'runner', 'node_modules', 'left')));
+  // An npm ci cut off partway (no .package-lock.json, which npm writes last)
+  // goes too, so the checks install afresh rather than fail on a missing .bin.
+  fs.rmSync(path.join(dir, 'runner', 'node_modules', '.package-lock.json'));
+  await syncClone(repo, 'runner/', dir);
+  assert.ok(!fs.existsSync(path.join(dir, 'runner', 'node_modules')));
+  fs.mkdirSync(path.join(dir, 'runner', 'node_modules', 'left'), { recursive: true });
   commit('lock', 'runner/package-lock.json', '{"name":"x","lockfileVersion":3,"v":2}\n');
   await syncClone(repo, 'runner/', dir);
   assert.ok(!fs.existsSync(path.join(dir, 'runner', 'node_modules')));

@@ -8,14 +8,29 @@ import { useSyncExternalStore } from 'react';
 export type RailView = 'scheduled' | 'projects' | 'runners' | 'usage';
 export type Route = { page: 'list' } | { page: 'new' } | { page: 'thread'; threadId: string } | { page: 'share'; slug: string } | { page: RailView; id?: string };
 
+// A path part, or undefined for a bad escape (/t/%E0): that page is the
+// list, not a URIError that stops the whole site loading.
+function part(s: string): string | undefined {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return undefined;
+  }
+}
+
 function parse(): Route {
   const s = location.pathname.match(/^\/s\/([^/]+)\/?$/);
-  if (s) return { page: 'share', slug: decodeURIComponent(s[1]) };
+  const slug = s ? part(s[1]) : undefined;
+  if (slug !== undefined) return { page: 'share', slug };
   const m = location.pathname.match(/^\/t\/([^/]+)\/?$/);
-  if (m) return { page: 'thread', threadId: decodeURIComponent(m[1]) };
+  const threadId = m ? part(m[1]) : undefined;
+  if (threadId !== undefined) return { page: 'thread', threadId };
   if (/^\/new\/?$/.test(location.pathname)) return { page: 'new' };
   const v = location.pathname.match(/^\/(scheduled|projects|runners|usage)(?:\/([^/]+))?\/?$/);
-  if (v) return { page: v[1] as RailView, ...(v[2] ? { id: decodeURIComponent(v[2]) } : {}) };
+  if (v) {
+    const id = v[2] ? part(v[2]) : undefined;
+    return { page: v[1] as RailView, ...(id !== undefined ? { id } : {}) };
+  }
   return { page: 'list' };
 }
 

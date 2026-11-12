@@ -271,3 +271,39 @@ test('packagesInstalled: only a finished npm install counts', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('unlinkPackages: takes away a node_modules link and only the link', () => {
+  const dir = tmpDir('tb-deploy-link-');
+  const shared = tmpDir('tb-deploy-shared-');
+  try {
+    fs.mkdirSync(path.join(shared, 'node_modules', 'typescript'), { recursive: true });
+    fs.symlinkSync(path.join(shared, 'node_modules'), path.join(dir, 'node_modules'));
+    steps.unlinkPackages(dir);
+    assert.equal(fs.existsSync(path.join(dir, 'node_modules')), false);
+    assert.ok(fs.existsSync(path.join(shared, 'node_modules', 'typescript')), "the main checkout's packages stay");
+    // A real folder is left for npm ci to replace.
+    fs.mkdirSync(path.join(dir, 'node_modules', 'x'), { recursive: true });
+    steps.unlinkPackages(dir);
+    assert.ok(fs.existsSync(path.join(dir, 'node_modules', 'x')));
+    steps.unlinkPackages(tmpDir('tb-deploy-none-'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(shared, { recursive: true, force: true });
+  }
+});
+
+// What decides whether to install, everywhere a checkout's packages are
+// installed before use: a finished install, not a folder that's there. Each
+// of these once took a cut-off install for a whole one.
+test('every install check goes by a finished install, and none installs through a link', () => {
+  const repo = path.resolve(import.meta.dirname, '..', '..', '..');
+  const deploy = fs.readFileSync(path.join(repo, 'runner', 'scripts', 'deploy.mjs'), 'utf8');
+  assert.doesNotMatch(deploy, /existsSync\(path\.join\([^)]*'node_modules'\)\)/);
+  assert.match(deploy, /unlinkPackages\(c\.runnerDir\);\s*step\('Installing the checkout/);
+  for (const f of ['check.sh', 'runner/scripts/dev-runner.sh', 'runner/scripts/install-runner.sh']) {
+    const text = fs.readFileSync(path.join(repo, f), 'utf8');
+    assert.doesNotMatch(text, /\[ ! -d "[^"]*node_modules[^"]*" \]/, f);
+    assert.match(text, /node_modules\/\.package-lock\.json/, f);
+    assert.match(text, /if \[ -L "[^"]*node_modules" \]; then rm "[^"]*node_modules"; fi/, f);
+  }
+});

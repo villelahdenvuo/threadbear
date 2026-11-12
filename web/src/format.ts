@@ -2,11 +2,12 @@
 
 // "claude-opus-5-5" → "Claude Opus 5.5", "opus" → "Claude Opus",
 // "gpt-6-astra" → "GPT-6 Astra". With no model, the CLI's name.
+// A dated id ("claude-sonnet-4-20250514") is its version without the date.
 export function modelLabel(provider?: string, model?: string): string {
   const cli = provider === 'codex' ? 'Codex' : 'Claude';
   if (!model) return cli;
   const id = model.replace(/\[.*\]$/, '');
-  const claude = id.match(/^(?:claude-)?(opus|sonnet|haiku|fable)(?:-(\d+)(?:-(\d+))?)?/i);
+  const claude = id.match(/^(?:claude-)?(opus|sonnet|haiku|fable)(?:-(\d{1,2})(?!\d)(?:-(\d{1,2})(?!\d))?)?/i);
   if (claude) {
     const family = claude[1]![0]!.toUpperCase() + claude[1]!.slice(1).toLowerCase();
     const version = claude[2] ? ` ${claude[2]}${claude[3] ? `.${claude[3]}` : ''}` : '';

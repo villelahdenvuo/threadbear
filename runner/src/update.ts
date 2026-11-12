@@ -310,7 +310,10 @@ export async function syncClone(checkout: string, prefix: string, dir: string, r
   } catch {
     // first run
   }
-  if (had !== lock) {
+  // And an install cut off partway (no node_modules/.package-lock.json,
+  // which npm writes last): every check after it would fail on a missing
+  // .bin (11 Nov).
+  if (had !== lock || (fs.existsSync(modules) && !fs.existsSync(path.join(modules, '.package-lock.json')))) {
     await fs.promises.rm(modules, { recursive: true, force: true });
     fs.writeFileSync(stamp, lock + '\n');
   }

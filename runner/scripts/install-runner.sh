@@ -525,7 +525,11 @@ else
 fi
 
 if [ "$FROM_SOURCE" = 1 ]; then
-  if [ ! -d "$RUNNER_DIR/node_modules/@anthropic-ai/claude-agent-sdk" ] || [ ! -d "$RUNNER_DIR/node_modules/ws" ]; then
+  # A finished install only (npm writes node_modules/.package-lock.json
+  # last). A link, as a thread's worktree has, is replaced, never
+  # installed through: npm ci would empty the main checkout's.
+  if [ ! -f "$RUNNER_DIR/node_modules/.package-lock.json" ]; then
+    if [ -L "$RUNNER_DIR/node_modules" ]; then rm "$RUNNER_DIR/node_modules"; fi
     echo "Installing the runner's packages..."
     (cd "$RUNNER_DIR" && PATH="$(dirname "$NODE"):$PATH" npm ci)
   fi

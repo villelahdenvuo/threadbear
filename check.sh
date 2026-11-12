@@ -259,8 +259,18 @@ runner_unit_tests() {
 "
 }
 
+# A finished install only: npm writes node_modules/.package-lock.json last,
+# so one cut off partway (no .bin) is installed again. A link (a thread's
+# worktree shares the main checkout's) is replaced, never installed through:
+# npm ci empties the folder first, under every thread that links to it.
+packages_ready() {
+  [ -f "$1/node_modules/.package-lock.json" ] && return 0
+  if [ -L "$1/node_modules" ]; then rm "$1/node_modules"; fi
+  return 1
+}
+
 if [ "$APP_ONLY" = 0 ]; then
-  if [ ! -d "$ROOT/runner/node_modules" ]; then
+  if ! packages_ready "$ROOT/runner"; then
     step "runner packages" "$ROOT/runner" npm ci --no-audit --no-fund
   fi
   step "runner typecheck" "$ROOT/runner" npm run typecheck
@@ -271,7 +281,7 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
   # slip in tour-e2e.mjs went unnoticed until it was next run (2 Nov).
   step "app tools parse" "$ROOT/app/Tools" bash -c 'for f in *.mjs mock-runner/*.mjs; do node --check "$f" || exit 1; done'
   # The Convex functions (convex/), against the generated types in git.
-  if [ ! -d "$ROOT/node_modules" ]; then
+  if ! packages_ready "$ROOT"; then
     step "convex packages" "$ROOT" npm ci --no-audit --no-fund
   fi
   step "convex typecheck" "$ROOT" npm run convex:typecheck
@@ -306,7 +316,7 @@ if [ "$QUICK" = 0 ]; then
   # The app's MockRunnerTests run the real WebSocket client (and the
   # runner restart) against the mock, and skip without its packages: in a
   # fresh checkout or worktree they used to skip while this said ok.
-  if [ ! -d "$ROOT/app/Tools/mock-runner/node_modules" ]; then
+  if ! packages_ready "$ROOT/app/Tools/mock-runner"; then
     step "mock runner packages" "$ROOT/app/Tools/mock-runner" npm ci --no-audit --no-fund
   fi
   step "app build" "$ROOT/app" "${LIMITED[@]}" swift build --disable-keychain

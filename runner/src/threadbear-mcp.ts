@@ -454,6 +454,13 @@ export function buildThreadbearTools(
   // open something (a file, a link, a panel whose patch runs commands) act
   // outside the sandbox, so they ask, as they do at the CLI in Ask mode.
   const confinedReason = async (what: string): Promise<string[]> => ((await restricted())?.confined ? [`${what}, outside the sandbox`] : []);
+  // The reads that reach past this thread (other threads' messages, the
+  // logins, every schedule, the projects) never ask, but from a sandboxed
+  // thread they ask too: the sandbox keeps the runner's data folder out of
+  // reach, and these would hand its contents back in, to an agent whose
+  // container can send them anywhere (security review, 12 Nov 2026).
+  const confinedRead = async (tool: string, what: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<void> =>
+    confirm(tool, await confinedReason(what), input, signal);
   // A message to a thread with more access than the caller.
   const sendReason = async (id: string, caller: Authority | undefined, verb = 'Send a message to'): Promise<string[]> => {
     if (!caller || id === selfId) return [];
@@ -867,7 +874,8 @@ export function buildThreadbearTools(
       'list_schedules',
       "Lists Threadbear's schedules: short id, title, when, the next run and where it sends. By default the ones that send to this thread or that this thread made; all for every schedule.",
       { all: z.boolean().optional().describe('Every schedule, not just this thread\'s.') },
-      handle(async ({ all: everything }) => {
+      handle(async ({ all: everything }, extra) => {
+        if (everything) await confinedRead('list_schedules', 'List every schedule', { all: true }, extra?.signal);
         const list = await mustSchedules().list(everything ? undefined : selfId);
         return list.length ? (await Promise.all(list.map(scheduleLine))).join('\n') : everything ? 'No schedules.' : 'No schedules for this thread. all: true shows every schedule.';
       }),
@@ -1027,7 +1035,8 @@ export function buildThreadbearTools(
       'list_projects',
       "Lists the user's projects: groupings above folders that carry goals, state and notes from thread to thread. Shows which this thread is in. A background librarian files threads into them; you can too (join_project), and should keep a project's state and notes current (update_project).",
       { archived: z.boolean().optional().describe('Include archived projects.') },
-      handle(async ({ archived }) => {
+      handle(async ({ archived }, extra) => {
+        await confinedRead('list_projects', "List the user's projects", archived ? { archived } : {}, extra?.signal);
         const mine = new Set(((await control.get(selfId)).projects ?? []).map((m) => m.id));
         const list = await mustProjects().list({ archived });
         if (!list.length) return 'No projects yet. create_project makes one.';
@@ -1046,8 +1055,10 @@ export function buildThreadbearTools(
       'read_project',
       "Reads a project: its folders, goals, state, notes and threads. Read the notes before working on a project you're in, for decisions and gotchas earlier threads left.",
       { project: z.string().describe('Project id, id prefix or title.') },
-      handle(async ({ project: q }) => {
+      handle(async ({ project: q }, extra) => {
         const { project: p, threadIds } = await mustProjects().get((await project(q)).id);
+        // Its own project's brief is what it works from.
+        if (!threadIds.includes(selfId)) await confinedRead('read_project', `Read the project "${p.title}"`, { project: q }, extra?.signal);
         const threads: string[] = [];
         for (const id of threadIds.slice(0, 20)) {
           const t = await Promise.resolve(control.get(id)).catch(() => undefined);
@@ -1572,7 +1583,8 @@ export function buildThreadbearTools(
         query: z.string().optional().describe('Words to search for in titles and previews, across every list.'),
         limit: z.number().int().min(1).max(200).optional().describe('Most threads to return. Default 30.'),
       },
-      handle(async ({ include, query, limit }) => {
+      handle(async ({ include, query, limit }, extra) => {
+        await confinedRead('list_threads', "List the user's threads", { ...(include ? { include } : {}), ...(query ? { query } : {}), ...(limit ? { limit } : {}) }, extra?.signal);
         const max = limit ?? 30;
         const here = query ? await control.search(query, max) : await control.list(include ?? ['inbox']);
         // Another runner's, matched as the runner's own search and lists
@@ -1598,11 +1610,12 @@ export function buildThreadbearTools(
         ...thisOrOther,
         messages: z.number().int().min(1).max(100).optional().describe('How many recent messages. Default 10.'),
       },
-      handle(async ({ threadId, id: alias, messages }) => {
+      handle(async ({ threadId, id: alias, messages }, extra) => {
         const asked = threadId ?? alias;
         const hit = asked ? await find(asked) : { id: selfId };
         const id = hit.id;
         const far = hit.other;
+        if (id !== selfId) await confinedRead('read_thread', `Read the thread "${far ? far.t.title : (await modeOf(id)).title}"`, { threadId: id, ...(messages ? { messages } : {}) }, extra?.signal);
         const remote = opts.remote?.();
         // Another runner's thread pages through the backend, in relay seqs
         // (relay.ts), and says when there's nothing older.
@@ -1653,7 +1666,8 @@ export function buildThreadbearTools(
       'list_accounts',
       'Lists the Claude and Codex logins Threadbear can run threads on (provider, how much room each has left, its models), then the pools: named lists of logins a thread can run on, where the runner picks the login with room for each turn and moves the thread when one runs dry. Says which pool a new thread with no account or pool starts on.',
       {},
-      handle(async () => {
+      handle(async (_input, extra) => {
+        await confinedRead('list_accounts', "List the user's logins", {}, extra?.signal);
         const h = control.hello();
         const rows = h.accounts.map((a) => {
           const bits = [providerName(a.provider), a.note ?? '', usageLine(a.usage, now()), a.id === h.defaults.accountId ? 'default for new threads' : ''].filter(Boolean);

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { pointCurrent, readCurrentLink, readState, releaseExists, runnerJsonBroken, writeState } from '../launch.mjs';
 import { connectRpc } from './rpc-client.mjs';
-import { ChecksUnavailable, Fail, SLEPT_EXIT, SleptThrough, UNAVAILABLE_EXIT, checkHostsFrom, checkSlept, nodeBeforeLaunch, packagesInstalled, remoteChecks, sleepCount, smokeHello, smokeTimedOut, step, unitTests } from './deploy-steps.mjs';
+import { ChecksUnavailable, Fail, SLEPT_EXIT, SleptThrough, UNAVAILABLE_EXIT, checkHostsFrom, checkSlept, nodeBeforeLaunch, packagesInstalled, remoteChecks, unlinkPackages, sleepCount, smokeHello, smokeTimedOut, step, unitTests } from './deploy-steps.mjs';
 // THREADBARE_* was the old name for these variables (config.ts, adoptOldNames).
 for (const [k, v] of Object.entries(process.env)) {
   const name = k.startsWith('THREADBARE_') ? 'THREADBEAR_' + k.slice(11) : undefined;
@@ -736,7 +736,12 @@ function deployBackend(c, g, v) {
 function checks(c, g) {
   const opts = { cwd: c.runnerDir, env: cleanEnv() };
   if (remoteChecks(checkHostsFrom(readJson(path.join(c.home, 'runner.json'))), g.root, opts)) return;
-  if (!packagesInstalled(c.runnerDir)) step('Installing the checkout\'s packages', c.npm, ['ci', '--no-audit', '--no-fund'], opts);
+  if (!packagesInstalled(c.runnerDir)) {
+    // A link (a thread's worktree shares the main checkout's) is replaced,
+    // never installed through: npm ci empties the folder it points at first.
+    unlinkPackages(c.runnerDir);
+    step('Installing the checkout\'s packages', c.npm, ['ci', '--no-audit', '--no-fund'], opts);
+  }
   step('Typecheck', c.npm, ['run', 'typecheck'], opts);
   unitTests(c, opts);
 }
