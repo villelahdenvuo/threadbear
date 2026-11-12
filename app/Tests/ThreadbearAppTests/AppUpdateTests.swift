@@ -38,9 +38,20 @@ final class AppUpdateTests: XCTestCase {
     // The update's build runs at background priority (a land's check held
     // Mike's M5 above load 24 on 6 Nov; builds Threadbear starts mustn't).
     func testTheUpdateBuildRunsAtBackgroundPriority() {
-        let (executable, arguments) = AppUpdater.buildCommand(script: "/b/stage-update.sh", checkout: "/repo", next: "/next")
+        let (executable, arguments) = AppUpdater.buildCommand(script: "/b/stage-update.sh", checkout: "/repo", next: "/next", efficiencyCores: 6)
         XCTAssertEqual(executable, "/usr/sbin/taskpolicy")
         XCTAssertEqual(arguments, ["-b", "/bin/bash", "/b/stage-update.sh", "/repo", "--next", "/next"])
+    }
+
+    // With two efficiency cores (an M1 Pro), background priority took the
+    // release build past an hour, holding the build lock (12 Nov): nice there.
+    func testFewEfficiencyCoresGetNiceInstead() {
+        for cores in [0, 2] {
+            let (executable, arguments) = AppUpdater.buildCommand(script: "/b/stage-update.sh", checkout: "/repo", next: "/next", efficiencyCores: cores)
+            XCTAssertEqual(executable, "/usr/bin/nice")
+            XCTAssertEqual(arguments, ["-n", "10", "/bin/bash", "/b/stage-update.sh", "/repo", "--next", "/next"])
+        }
+        XCTAssertGreaterThanOrEqual(AppUpdater.efficiencyCoreCount(), 0)
     }
 
     func testTheTreeCoversAppAndDockAsBuildAppWritesIt() {

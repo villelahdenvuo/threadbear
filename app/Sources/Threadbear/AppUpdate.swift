@@ -438,8 +438,29 @@ final class AppUpdater {
     /// build on his M5): throttled CPU and disk, off the cores he's using,
     /// and inherited by swift build and everything else it starts. `nice`
     /// only lowered its CPU priority.
-    nonisolated static func buildCommand(script: String, checkout: String, next: String) -> (String, [String]) {
-        ("/usr/sbin/taskpolicy", ["-b", "/bin/bash", script, checkout, "--next", next])
+    ///
+    /// Not on a Mac with few efficiency cores, though: background work runs
+    /// only on those, and on Ville's M1 Pro (two) the release build took over
+    /// an hour, holding the build lock every thread's build and tests wait
+    /// on (12 Nov). There it's `nice`: every core, giving way to the rest.
+    nonisolated static func buildCommand(script: String, checkout: String, next: String, efficiencyCores: Int = efficiencyCoreCount()) -> (String, [String]) {
+        if efficiencyCores < minEfficiencyCoresForBackground {
+            return ("/usr/bin/nice", ["-n", "10", "/bin/bash", script, checkout, "--next", next])
+        }
+        return ("/usr/sbin/taskpolicy", ["-b", "/bin/bash", script, checkout, "--next", next])
+    }
+
+    /// Fewer than this and background priority starves the build.
+    nonisolated static let minEfficiencyCoresForBackground = 4
+
+    /// The Mac's efficiency cores (`hw.perflevel1.physicalcpu`), or 0 on a
+    /// Mac with one kind of core, where background priority has none.
+    nonisolated static func efficiencyCoreCount() -> Int {
+        var count: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("hw.nperflevels", &count, &size, nil, 0) == 0, count > 1 else { return 0 }
+        guard sysctlbyname("hw.perflevel1.physicalcpu", &count, &size, nil, 0) == 0 else { return 0 }
+        return Int(count)
     }
 
     private func startBuild(appTree: String, checkout: String) {
