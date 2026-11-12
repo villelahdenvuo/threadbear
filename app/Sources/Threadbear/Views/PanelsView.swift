@@ -1113,6 +1113,8 @@ final class WebPanelPool: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 enum PanelDebug {
     nonisolated(unsafe) static var renders: [String: PanelRender] = [:]
     nonisolated(unsafe) static var images: [String: NSImage] = [:]
+    /// Each list panel's open rows, by `ListPanelKey`.
+    nonisolated(unsafe) static var open: [String: Set<String>] = [:]
 
     static func note(_ id: String, _ render: PanelRender?, image: NSImage?) {
         renders[id] = render
@@ -1184,6 +1186,14 @@ private struct ImagePanel: View {
 
 // MARK: - List panels
 
+/// A list row's identity across refreshes, for keeping its folded rows open:
+/// its section and link or file, else its title.
+enum ListPanelKey {
+    static func of(_ item: PanelItem) -> String {
+        "\(item.section ?? "")\u{0}\(item.url ?? item.path ?? item.title)"
+    }
+}
+
 /// A `list` panel: the rows its patch's `items` function gives, asked for
 /// when it's shown and every 15 seconds while it is. The rows it last had
 /// for a thread show at once when that thread is opened again, rather than
@@ -1194,6 +1204,8 @@ private struct ListPanel: View {
     let thread: ThreadSummary
     let panel: Panel
     @State private var render: PanelRender?
+    /// The rows whose folded rows are open, by `ListPanel.key`.
+    @State private var open: Set<String> = []
 
     var body: some View {
         Group {
@@ -1205,6 +1217,11 @@ private struct ListPanel: View {
                         ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                             if let heading = headings[index] { SectionHeading(title: heading) }
                             row(item, reservesIcon: reserves)
+                            if let more = item.more, open.contains(ListPanelKey.of(item)) {
+                                ForEach(Array(more.items.enumerated()), id: \.offset) { _, child in
+                                    row(child, reservesIcon: true, indent: true)
+                                }
+                            }
                         }
                     }
                     .padding(.vertical, zoomed(8))
@@ -1218,6 +1235,10 @@ private struct ListPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: "\(thread.id)/\(panel.id)") {
             let key = "\(thread.id)/\(panel.id)"
+            open = []
+            #if DEBUG
+            PanelDebug.open[panel.id] = []
+            #endif
             render = app.listPanelRows[key]
             #if DEBUG
             PanelDebug.note(panel.id, render, image: nil)
@@ -1238,9 +1259,10 @@ private struct ListPanel: View {
         }
     }
 
-    private func row(_ item: PanelItem, reservesIcon: Bool) -> some View {
+    private func row(_ item: PanelItem, reservesIcon: Bool, indent: Bool = false) -> some View {
+        let key = ListPanelKey.of(item)
         let link = item.url.flatMap(URL.init(string:))
-        let open: (() -> Void)? = if let path = item.path {
+        let openRow: (() -> Void)? = if let path = item.path {
             { app.openLink(URL(fileURLWithPath: path), title: item.title, in: thread) }
         } else if let link {
             { app.openLink(link, title: item.title, in: thread) }
@@ -1252,8 +1274,10 @@ private struct ListPanel: View {
         return PaneRow(icon: ListPanel.icon(item), iconColor: ListPanel.colour(item.tone), title: item.title,
                        trailing: item.trailing,
                        trailingSymbol: item.tone == .done && item.icon != nil ? "checkmark" : nil,
-                       detail: item.detail, reservesIcon: reservesIcon, detailTruncation: .tail,
-                       detailLines: 2, action: open)
+                       detail: item.detail, indent: indent, reservesIcon: reservesIcon, detailTruncation: .tail,
+                       detailLines: 2, more: item.more?.label, moreOpen: open.contains(key),
+                       toggleMore: { toggle(key) },
+                       action: openRow)
             .iconContextMenu {
                 if let path = item.path {
                     FileMenu(path: path, thread: thread, title: item.title)
@@ -1261,6 +1285,13 @@ private struct ListPanel: View {
                     LinkMenu(url: link, thread: thread, title: item.title)
                 }
             }
+    }
+
+    private func toggle(_ key: String) {
+        if open.contains(key) { open.remove(key) } else { open.insert(key) }
+        #if DEBUG
+        PanelDebug.open[panel.id] = open
+        #endif
     }
 
     /// The row's own icon, else one for its tone, else none.

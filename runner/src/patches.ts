@@ -1059,7 +1059,7 @@ export async function renderListPanel(
       }),
     ]);
     if (!Array.isArray(value)) return { note: "The panel's items function didn't return a list." };
-    return { items: value.slice(0, LIST_ITEMS_KEPT).map(panelItem).filter((x): x is PanelItem => x !== undefined) };
+    return { items: value.slice(0, LIST_ITEMS_KEPT).map((x) => panelItem(x)).filter((x): x is PanelItem => x !== undefined) };
   } catch (e) {
     return { note: `Couldn't fill this panel: ${firstLine(e)}` };
   } finally {
@@ -1188,7 +1188,9 @@ function badgeCount(v: unknown): number | undefined {
   return Math.min(Math.floor(n), 9999);
 }
 
-function panelItem(raw: unknown): PanelItem | undefined {
+export const MORE_ITEMS_KEPT = 50;
+
+export function panelItem(raw: unknown, nested = false): PanelItem | undefined {
   if (typeof raw === 'string') return raw.trim() ? { title: raw.trim().slice(0, 300) } : undefined;
   if (!raw || typeof raw !== 'object') return undefined;
   const r = raw as Record<string, unknown>;
@@ -1198,6 +1200,12 @@ function panelItem(raw: unknown): PanelItem | undefined {
   if (r.tone === 'attention' || r.tone === 'failed' || r.tone === 'done') item.tone = r.tone;
   if (typeof r.section === 'string' && r.section.trim()) item.section = r.section.trim().slice(0, 80);
   if (typeof r.trailing === 'string' && r.trailing.trim()) item.trailing = r.trailing.trim().slice(0, 24);
+  if (nested) delete item.section;
+  const more = r.more as Record<string, unknown> | undefined;
+  if (!nested && more && typeof more === 'object' && typeof more.label === 'string' && more.label.trim() && Array.isArray(more.items)) {
+    const items = more.items.slice(0, MORE_ITEMS_KEPT).map((x) => panelItem(x, true)).filter((x): x is PanelItem => x !== undefined);
+    if (items.length) item.more = { label: more.label.trim().slice(0, 80), items };
+  }
   return item;
 }
 

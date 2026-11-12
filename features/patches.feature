@@ -30,6 +30,16 @@ Feature: What a folder's patches give a thread
     And the list panel has the heading "Elsewhere" with the rows "Local | Production"
     And the list row "Pricing" says "12m" and "Waiting on the plan prices"
 
+  @panel.list @gpui-pending
+  Scenario: A list row's link opens and closes the rows folded under it
+    When I open the thread "Rebuild the three landing pages"
+    And I show the "deploys.previews" section of the pane
+    Then the list row "Production" offers "Also in 2 other threads", closed
+    When I open the rows under the list row "Production"
+    Then the list panel has the heading "Elsewhere" with the rows "Local | Production | Fix the footer links | Ship the pricing page"
+    When I close the rows under the list row "Production"
+    Then the list panel has the heading "Elsewhere" with the rows "Local | Production"
+
   @panel.image
   Scenario: An image panel draws its picture
     When I open the thread "Pick a colour for the new Share button"

@@ -226,6 +226,29 @@ final class ListPanelTests: XCTestCase {
         XCTAssertEqual(PanelItem.headings(items), ["Waiting · 1", "Shipped · 2", nil, nil, "Shipped · 2"])
     }
 
+    func testARowsFoldedRowsDecodeOneLevelDeep() throws {
+        let json = #"""
+        {"items":[
+          {"title":"ecom-api#4940","detail":"CI pass","more":{"label":"Also in 2 other threads","items":[
+            {"title":"AT Desk","url":"threadbear://thread/a","section":"x","more":{"label":"deeper","items":[{"title":"no"}]}},
+            {"detail":"no title"},
+            {"title":"PRs panel"}
+          ]}},
+          {"title":"empty","more":{"label":"Nothing","items":[]}},
+          {"title":"odd","more":"not an object"}
+        ]}
+        """#
+        let items = try XCTUnwrap(try JSONDecoder().decode(PanelRender.self, from: Data(json.utf8)).items)
+        XCTAssertEqual(items.count, 3)
+        let more = try XCTUnwrap(items[0].more)
+        XCTAssertEqual(more.label, "Also in 2 other threads")
+        XCTAssertEqual(more.items.map(\.title), ["AT Desk", "PRs panel"])
+        XCTAssertNil(more.items[0].more)
+        XCTAssertNil(more.items[0].section)
+        XCTAssertNil(items[1].more)
+        XCTAssertNil(items[2].more)
+    }
+
     func testRailIcons() {
         XCTAssertEqual(PanelIcon.symbol(for: Panel(id: "convex.dashboard", title: "Convex")), "cylinder.split.1x2")
         XCTAssertEqual(PanelIcon.symbol(for: Panel(id: "xcode.simulator", title: "Simulator", kind: .image)), "iphone")

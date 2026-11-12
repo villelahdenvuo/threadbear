@@ -45,6 +45,21 @@ Then('the list row {string} says {string} and {string}', async function (this: T
   });
 });
 
+Then('the list row {string} offers {string}, closed', async function (this: ThreadbearWorld, title: string, more: string) {
+  await this.until(`"${title}" offering ${more}`, (d) => {
+    const row = pane(d)?.list?.flatMap((s) => s.rows).find((r) => r.title === title);
+    return row?.more === more && row.moreOpen === false;
+  });
+});
+
+When('I open the rows under the list row {string}', async function (this: ThreadbearWorld, title: string) {
+  await this.app.do({ cmd: 'click', tip: `Show the rows under ${title}` });
+});
+
+When('I close the rows under the list row {string}', async function (this: ThreadbearWorld, title: string) {
+  await this.app.do({ cmd: 'click', tip: `Hide the rows under ${title}` });
+});
+
 Then('the image panel shows a picture', async function (this: ThreadbearWorld) {
   await this.until('a picture in the image panel', (d) => /^picture \d+x\d+/.test(pane(d)?.image ?? ''));
 });

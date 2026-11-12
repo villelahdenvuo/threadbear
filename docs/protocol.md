@@ -489,6 +489,12 @@ type PanelItem = {
                         // section, drawn where it changes ("Waiting · 1"); at most 80 characters
   trailing?: string     // short and faint at the end of the title's line, like a date
                         // ("5d"); at most 24 characters
+  more?: {              // rows folded under this one ("Also in 2 other threads"):
+    label: string       // a link with a chevron at the end of the detail line, kept on
+                        // one line, that opens and closes them; at most 80 characters
+    items: PanelItem[]  // drawn indented under the row while open; their own `more` and
+                        // `section` are ignored; at most 50
+  }
 }
 
 // A grouping above folders that carries goals, state and notes forward

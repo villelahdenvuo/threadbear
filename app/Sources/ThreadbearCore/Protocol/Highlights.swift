@@ -226,9 +226,30 @@ public struct PanelItem: Sendable, Hashable, Codable {
     public var section: String?
     /// Short and faint at the end of the title's line: a date or a count.
     public var trailing: String?
+    /// Rows folded under this one, opened by `label`, a link at the end of
+    /// the detail line. One level: theirs have no `more`.
+    public var more: More?
+
+    public struct More: Sendable, Hashable, Codable {
+        public var label: String
+        public var items: [PanelItem]
+
+        public init(label: String, items: [PanelItem]) {
+            self.label = label
+            self.items = items
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            label = try c.decode(String.self, forKey: .label)
+            items = c.lossyArray(PanelItem.self, forKey: .items).map { var item = $0; item.more = nil; item.section = nil; return item }
+        }
+
+        enum CodingKeys: String, CodingKey { case label, items }
+    }
 
     public init(title: String, detail: String? = nil, url: String? = nil, path: String? = nil, icon: String? = nil, tone: Tone? = nil,
-                section: String? = nil, trailing: String? = nil) {
+                section: String? = nil, trailing: String? = nil, more: More? = nil) {
         self.title = title
         self.detail = detail
         self.url = url
@@ -237,6 +258,7 @@ public struct PanelItem: Sendable, Hashable, Codable {
         self.tone = tone
         self.section = section
         self.trailing = trailing
+        self.more = more
     }
 
     public init(from decoder: Decoder) throws {
@@ -249,9 +271,10 @@ public struct PanelItem: Sendable, Hashable, Codable {
         tone = (try? c.decodeIfPresent(Tone.self, forKey: .tone)) ?? nil
         section = (try? c.decodeIfPresent(String.self, forKey: .section)) ?? nil
         trailing = (try? c.decodeIfPresent(String.self, forKey: .trailing)) ?? nil
+        more = (try? c.decodeIfPresent(More.self, forKey: .more)).flatMap { $0?.items.isEmpty == false ? $0 : nil }
     }
 
-    enum CodingKeys: String, CodingKey { case title, detail, url, path, icon, tone, section, trailing }
+    enum CodingKeys: String, CodingKey { case title, detail, url, path, icon, tone, section, trailing, more }
 }
 
 extension PanelItem {

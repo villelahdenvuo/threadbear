@@ -466,6 +466,11 @@ struct AppDump: Encodable {
             var symbol: String?
             /// Needs you's tick box.
             var ticked: Bool?
+            /// A list row's link to the rows folded under it, and whether
+            /// they're open; each open one follows it with `folded` true.
+            var more: String?
+            var moreOpen: Bool?
+            var folded: Bool?
         }
         struct Section: Codable {
             var key: String
@@ -776,8 +781,17 @@ struct AppDump: Encodable {
                         sections.append(Pane.Section(key: heading, title: heading, count: 0, folded: false, rows: []))
                     }
                     let symbol = item.icon.flatMap { $0.isEmpty ? nil : $0 } ?? item.tone.map(\.rawValue)
-                    sections[sections.count - 1].rows.append(Pane.Row(title: item.title, trailing: item.trailing, detail: item.detail, symbol: symbol))
+                    let isOpen = item.more != nil && PanelDebug.open[panel.id]?.contains(ListPanelKey.of(item)) == true
+                    sections[sections.count - 1].rows.append(Pane.Row(title: item.title, trailing: item.trailing, detail: item.detail, symbol: symbol,
+                                                                      more: item.more?.label, moreOpen: item.more == nil ? nil : isOpen))
                     sections[sections.count - 1].count += 1
+                    if isOpen, let more = item.more {
+                        for child in more.items {
+                            let symbol = child.icon.flatMap { $0.isEmpty ? nil : $0 } ?? child.tone.map(\.rawValue)
+                            sections[sections.count - 1].rows.append(Pane.Row(title: child.title, trailing: child.trailing, detail: child.detail,
+                                                                              symbol: symbol, folded: true))
+                        }
+                    }
                 }
                 pane.list = sections
             case .image:

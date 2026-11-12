@@ -455,6 +455,11 @@ struct PaneRow: View {
     var detailTruncation: Text.TruncationMode = .middle
     /// A list panel's sentence gets two; a path or a sha one.
     var detailLines = 1
+    /// A link with a chevron at the end of the detail line that opens and
+    /// closes rows folded under this one (a list panel row's `more`).
+    var more: String?
+    var moreOpen = false
+    var toggleMore: (() -> Void)?
     var action: (() -> Void)?
     @State private var hovering = false
 
@@ -462,7 +467,12 @@ struct PaneRow: View {
         // A row with nothing to open (a commit) isn't a button: a disabled
         // one greyed it out as if it were unavailable.
         Group {
-            if let action {
+            if let action, more != nil {
+                // Not a Button: the link inside would lose its clicks to it.
+                label
+                    .onTapGesture(perform: action)
+                    .accessibilityAddTraits(.isButton)
+            } else if let action {
                 Button(action: action) { label }
                     .buttonStyle(.plain)
             } else {
@@ -515,7 +525,20 @@ struct PaneRow: View {
                             .lineLimit(4)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if let detail, !detail.isEmpty {
+                    if let more {
+                        // The link and its chevron are one piece: after the
+                        // detail when both fit on a line, else under it.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                                if let detail, !detail.isEmpty { detailText(detail + " · ", lines: 1) }
+                                moreLink(more)
+                            }
+                            VStack(alignment: .leading, spacing: zoomed(2)) {
+                                if let detail, !detail.isEmpty { detailText(detail, lines: detailLines) }
+                                moreLink(more)
+                            }
+                        }
+                    } else if let detail, !detail.isEmpty {
                         Text(detail)
                             .font(.system(size: TypeScale.small))
                             .foregroundStyle(SidebarMetrics.faint)
@@ -531,6 +554,31 @@ struct PaneRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(hovering && action != nil ? SidebarMetrics.hover : .clear, in: RoundedRectangle(cornerRadius: SidebarMetrics.corner))
             .contentShape(Rectangle())
+    }
+
+    private func detailText(_ text: String, lines: Int) -> some View {
+        Text(text)
+            .font(.system(size: TypeScale.small))
+            .foregroundStyle(SidebarMetrics.faint)
+            .lineLimit(lines)
+            .truncationMode(detailTruncation)
+            .fixedSize(horizontal: lines == 1, vertical: lines > 1)
+    }
+
+    private func moreLink(_ label: String) -> some View {
+        Button { toggleMore?() } label: {
+            HStack(alignment: .firstTextBaseline, spacing: zoomed(3)) {
+                Text(label)
+                Image(systemName: moreOpen ? "chevron.down" : "chevron.right")
+                    .font(.system(size: zoomed(8), weight: .semibold))
+            }
+            .font(.system(size: TypeScale.small))
+            .foregroundStyle(Color.accentColor)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .tip(moreOpen ? "Hide the rows under \(title)" : "Show the rows under \(title)")
     }
 }
 

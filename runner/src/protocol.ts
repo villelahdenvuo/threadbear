@@ -602,6 +602,9 @@ export type PanelItem = {
   section?: string;
   // Short, faint, at the end of the title's line: a date or a count.
   trailing?: string;
+  // Rows folded under this one, opened by a link (label) at the end of the
+  // detail line. One level: theirs have no `more` or `section`.
+  more?: { label: string; items: PanelItem[] };
 };
 
 export type BackgroundKind = 'agent' | 'shell' | 'monitor' | 'other';
