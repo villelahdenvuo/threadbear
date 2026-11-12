@@ -3129,9 +3129,9 @@ The new hero is shorter, and every page now leads with what the app does.
         { title: 'Home', detail: 'Ready, with the new hero, the three plan cards and the footer links all pointing at the rebuilt pages', url: 'https://site-git-landing-rebuild.vercel.app', icon: 'globe', tone: 'done', section: 'This branch', trailing: '4m' },
         { title: 'Pricing', detail: 'Waiting on the plan prices', url: 'https://site-git-landing-rebuild.vercel.app/pricing', icon: 'globe', tone: 'attention', section: 'This branch', trailing: '12m' },
         { title: 'Docs', detail: 'Build failed: no image at /docs/hero.png', path: path.join(root, 'logs/docs-build.txt'), icon: 'globe', tone: 'failed', section: 'This branch', trailing: '20m' },
-        { title: 'Local', detail: 'astro dev on port 4321', url: 'http://localhost:4321/', icon: 'laptopcomputer', section: 'Elsewhere' },
+        { title: 'Local', detail: 'astro dev on port 4321', url: 'http://localhost:4321/', icon: 'laptopcomputer', tone: 'blocked', section: 'Elsewhere' },
         // Rows folded under it, opened by the link at the end of its detail.
-        { title: 'Production', detail: 'main, deployed 2 days ago', url: 'https://example.com', icon: 'globe', section: 'Elsewhere', trailing: '2d',
+        { title: 'Production', detail: 'main, deployed 2 days ago', url: 'https://example.com', icon: 'globe', tone: 'ready', section: 'Elsewhere', trailing: '2d',
           more: { label: 'Also in 2 other threads', items: [
             { title: 'Fix the footer links', url: 'threadbear://thread/demo_upload', icon: 'bubble.left.and.text.bubble.right' },
             { title: 'Ship the pricing page', url: 'threadbear://thread/demo_dark_mode', icon: 'bubble.left.and.text.bubble.right' },

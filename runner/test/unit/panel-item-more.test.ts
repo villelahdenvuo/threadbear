@@ -31,3 +31,9 @@ test('a `more` with no label or no rows left is dropped, and at most 50 rows are
   const many = panelItem({ title: 'a', more: { label: 'More', items: Array.from({ length: 80 }, (_, i) => ({ title: `r${i}` })) } });
   assert.equal(many?.more?.items.length, MORE_ITEMS_KEPT);
 });
+
+test('a list row keeps the ready and blocked tones, and drops one it does not know', () => {
+  assert.equal(panelItem({ title: 'a', tone: 'ready' })?.tone, 'ready');
+  assert.equal(panelItem({ title: 'a', tone: 'blocked' })?.tone, 'blocked');
+  assert.equal(panelItem({ title: 'a', tone: 'loud' })?.tone, undefined);
+});
