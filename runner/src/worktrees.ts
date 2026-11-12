@@ -311,6 +311,9 @@ export type LandOptions = {
   // The CLI reads the patch after rebasing, including changes to the
   // required check made by a landing it just waited for.
   readCheck?: () => Promise<string | undefined>;
+  // Told when it starts waiting for another landing (true) and once it has
+  // the lock (false), for the thread's Queued (docs/protocol.md, "Queued jobs").
+  queued?: (waiting: boolean) => Promise<void>;
 };
 
 // How many lines of a failed check's output are shown.
@@ -331,7 +334,7 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
   let release: () => Promise<void>;
   const asked = Date.now();
   try {
-    release = await lockLanding(path.resolve(t.path, common, 'threadbear-land.lock'), opts.out ?? console.log);
+    release = await lockLanding(path.resolve(t.path, common, 'threadbear-land.lock'), opts.out ?? console.log, opts.queued);
   } catch (e) {
     (opts.err ?? console.error)(`Couldn't lock the repo for landing: ${(e as Error).message}`);
     return 1;
@@ -346,7 +349,7 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
 // Advisory locks are released by the OS, including when tb crashes. The
 // holder exits when its parent's pipe closes; no PID files to go stale or
 // delete under another waiter. Keep the lock file itself between runs.
-async function lockLanding(file: string, out: (line: string) => void): Promise<() => Promise<void>> {
+async function lockLanding(file: string, out: (line: string) => void, queued?: (waiting: boolean) => Promise<void>): Promise<() => Promise<void>> {
   const holder = "process.stdin.resume(); process.stdin.on('end', () => process.exit(0)); process.stdout.write('locked');";
   const mac = process.platform === 'darwin';
   const take = async (wait: boolean): Promise<(() => Promise<void>) | undefined> => {
@@ -376,7 +379,12 @@ async function lockLanding(file: string, out: (line: string) => void): Promise<(
   const release = await take(false);
   if (release) return release;
   out('Waiting for another landing of this repo to finish...');
-  return (await take(true))!;
+  await queued?.(true);
+  try {
+    return (await take(true))!;
+  } finally {
+    await queued?.(false);
+  }
 }
 
 // A passing check prints nothing of its own, so on 9 Nov finding out where
