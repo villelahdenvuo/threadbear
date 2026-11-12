@@ -181,6 +181,14 @@ File references are where to look.
   rewrites anything: a commit made only there stays, and `tb status` says so.
   `tb land` refuses in that repo. If `origin` is Mike's repo rather than
   your own, leave this off.
+- **GitHub Actions runs in Highlights** (`runner/src/ci-runs.ts`,
+  experiment `ciRuns`, off by default): after a thread pushes a commit to
+  GitHub or runs `gh workflow run`, the runner runs `git rev-parse` and
+  `gh run list` / `gh run view` in the thread's folder, through your login
+  shell and your own `gh` login (it never reads the token). It asks 5
+  seconds after the push, then every 15 seconds to 2 minutes, only while a
+  run is queued or running, and stops after 2 hours at most. Never for an
+  archived thread. The runs it finds are kept on the thread's record.
 - **Schedule checks** (`runner/src/schedule-check.ts`, experiment
   `scheduleChecks`, off by default): a schedule's check command runs in
   `/bin/sh` before each run, as you, for at most a minute (or up to five,
@@ -319,6 +327,7 @@ File references are where to look.
 | Convex (the Convex panel) | yours | Only for a thread in a Convex project, when its Convex panel opens: the runner's Convex CLI asks api.convex.dev for the project's deployments and a deploy key, the runner asks the deployment whether a kept key still works (`/api/check_admin_key`), and the panel loads Convex's embedded dashboard (dashboard-embedded.convex.dev) with that key. Sign in to Convex goes to auth.convex.dev. (`runner/src/convex-keys.ts`) |
 | Your other Macs, over ssh | yours | Only when you run `tb runner add <name> --ssh <host>` or `tb runner check --ssh <host>` on your first Mac: it reads that Mac's Threadbear `runner.json`, writes its id and the deployment's address there if it hasn't them, writes its new key into that Mac's `secrets/convex-key`, and looks whether that Mac has a deploy key, Convex panel keys or a Convex login (names only, never a key), through your own ssh setup with agent and port forwarding off (`runner/src/runner-keys.ts`). `tb runner audit` asks this Mac's runner for its threads' last seqs and your deployment for what the main key made. `tb runner rotate-owner` sets env vars on your deployment with your deploy key, and, if you give it a Convex team access token for that run (`CONVEX_TEAM_TOKEN`, never kept), asks api.convex.dev for the deployment's deploy keys (their names and dates) before it rotates. |
 | GitHub | Mike's repo | Release tags fetched every 6 hours; the fork at setup |
+| GitHub API, through your `gh` | yours | Only with the `ciRuns` experiment on: the commit sha, repo, workflow name and branch a thread pushed or dispatched, to list that commit's Actions runs, while they're queued or running |
 | downloads.claude.ai, registry.npmjs.org | Anthropic, npm | CLI version checks and installs; `npm ci` |
 | Anthropic, OpenAI | yours | Your threads, through the official CLIs on your own logins. With the `cardReviewer` experiment on (off by default), an approval card in a thread on Auto, with the thread's first and latest messages, goes to Opus through the same CLI so it can decide in your place. Unless you turn off Settings > General > Code review (`"labReview": false`), a thread's code change, with your message and the agent's reply, goes to your other provider's CLI as a review thread, as if you'd started one (or a fresh session of the same provider, with no other login). After a turn fails because the API couldn't be reached, the runner itself opens (and straight away closes) a connection to api.anthropic.com or chatgpt.com on port 443, at most once a minute, until one opens and the thread carries on. Nothing is sent over it (`runner/src/net-probe.ts`). |
 | OpenCode's Zen (opencode.ai), models.dev, and whichever providers you've logged it into | theirs | Only with the `acpAgents` experiment on and a thread on OpenCode: that thread's prompts and tool output, through the official CLI, and small jobs' text when a pool of only OpenCode logins is picked for them in Settings |

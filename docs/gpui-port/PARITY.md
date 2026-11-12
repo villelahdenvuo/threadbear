@@ -147,6 +147,7 @@ Scenarios passing: Swift: 191 of 202, Mac: 193 of 202, Windows: 192 of 202, Linu
 | `highlights.subagents` Sub-agents list | pass | pass | pass | pass |
 | `highlights.started` Threads it started | pass | pass | pass | pass |
 | `highlights.pinned` Pinned, Files, Links | pass | pass | pass | pass |
+| `highlights.runs` Runs | pending | pending | pending | pending |
 | `highlights.changes` Changes | pass | pass | pass | pass |
 | `highlights.rowmenus` Row menus | pass | pass | pass | pass |
 

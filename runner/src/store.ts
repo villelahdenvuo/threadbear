@@ -1,4 +1,5 @@
 import type { HighlightState } from './highlights.ts';
+import type { CiRunsState } from './ci-runs.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WaitingForRoom, Ask, AskAnswer, NeedsWho, DesignReview, ReplyButton, ReviewDraft, EffortLevel, MessageOrigin, PanelRequest, PermissionMode, ThreadShare, PersistedEvent, Provider, ArchivedBy, ArchiveVerdict, Subagent, ThreadProject, ThreadSchedule, ThreadStartedBy, ThreadStatus, ImageRef, LooseEnd, ContextUsage } from './protocol.ts';
@@ -168,6 +169,8 @@ export type ThreadRecord = {
   // event it had read up to. Brought up to date when a client asks.
   highlights?: HighlightState;
   highlightsAt?: string; // a pin, a removal or a new brief
+  // GitHub Actions runs it set off (ci-runs.ts, experiment ciRuns).
+  ciRuns?: CiRunsState;
   // The librarian's note on where the thread is up to, and what it's for
   // (purpose: since the recap box, so older notes have none).
   brief?: { text: string; at: string; purpose?: string };
