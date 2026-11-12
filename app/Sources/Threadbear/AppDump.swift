@@ -1111,7 +1111,7 @@ struct AppDump: Encodable {
 
     static func cardLines(_ card: AsksCard, collapsed: Bool) -> [String] {
         if card.isDone {
-            return ["Done"] + card.next.enumerated().map { i, text in
+            return [card.isOpen && !card.running.isEmpty ? "Still running" : "Done"] + card.next.enumerated().map { i, text in
                 (card.pickedNext.contains(i) ? "[x] " : "[ ] ") + text + (card.explainNext.contains(i) ? " (?)" : "")
             }
         }

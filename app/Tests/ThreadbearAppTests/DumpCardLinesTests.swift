@@ -23,4 +23,22 @@ final class DumpCardLinesTests: XCTestCase {
         XCTAssertEqual(AppDump.cardLines(done, collapsed: false), ["Done", "[ ] A (?)", "[x] B"])
         XCTAssertEqual(AppDump.cardLines(AsksCard(seq: 3, asks: [Ask(action: "Go")]), collapsed: true), ["Needs you (collapsed)", "[ ] 1. Go"])
     }
+
+    /// A done card while background work still runs (a land, a build):
+    /// "Still running", with no Done and no Archive until it's over (Ville,
+    /// 12 Nov). A closed one is just the old Done.
+    func testADoneCardHoldsDoneAndArchiveWhileAJobRuns() {
+        var card = AsksCard(seq: 3, asks: [], next: ["A"])
+        card.running = [BackgroundTask(kind: .shell, description: "tb land")]
+        XCTAssertEqual(AppDump.cardLines(card, collapsed: false), ["Still running", "[ ] A"])
+        let drawn = RowRenderer.asksText(card).string
+        XCTAssertTrue(drawn.contains("Still running"))
+        XCTAssertFalse(drawn.contains("Archive"))
+        XCTAssertFalse(drawn.contains("Done"))
+        card.running = []
+        XCTAssertTrue(RowRenderer.asksText(card).string.contains("Archive"))
+        card.running = [BackgroundTask(kind: .shell, description: "tb land")]
+        card.isOpen = false
+        XCTAssertEqual(AppDump.cardLines(card, collapsed: false).first, "Done")
+    }
 }

@@ -155,7 +155,12 @@ pastes into Slack or Mail as it looks. The phone and the website show it
 the same way.
 
 A reply that needs nothing from you ends with a Done card at the top of
-the message box, with an Archive button to put the thread away. When something it talked about is
+the message box, with an Archive button to put the thread away. While a
+job or sub-agent it started is still going in the background, the card
+says Still running instead, with no Archive, and turns into Done when the
+work is over. A job waiting for its turn (a landing behind another
+landing, a build behind another build) shows as Queued on the thread's row,
+and the line at the end of the thread says what it waits for. When something it talked about is
 still worth doing (a piece it didn't get to, a check that's due), the
 card lists them under "Or carry on". Click any of them to tick them
 (click again to untick), add anything you like in the message box, and

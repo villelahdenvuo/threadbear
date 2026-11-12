@@ -446,6 +446,11 @@ public struct AsksCard: Sendable, Hashable {
     /// The done card's loose ends, as the runner checked them (protocol
     /// "Loose ends"): nil when it didn't, empty when nothing's left.
     public var looseEnds: [LooseEnd]?
+    /// The thread's background work while a done card is up (sub-agents,
+    /// shell jobs, a result about to be read): the card holds Done and
+    /// Archive until it's all over, as the agent's "nothing needed" came
+    /// while a land or a build was still going (Ville, 12 Nov).
+    public var running: [BackgroundTask] = []
 
     public init(seq: Int, asks: [Ask], ticked: Set<Int> = [], isOpen: Bool = true, picks: [Int: Int] = [:], next: [String] = [], notes: [Int: AskNote] = [:], pickedNext: Set<Int> = [], explainNext: Set<Int> = [], looseEnds: [LooseEnd]? = nil) {
         self.seq = seq

@@ -165,6 +165,22 @@ final class NeedsYouTests: XCTestCase {
         XCTAssertEqual(summary.looseEnds?.ends.first?.threadId, "b")
     }
 
+    /// The thread's background work rides on its done cards, the one that
+    /// arrives while it runs included, and goes when it's over.
+    func testDoneCardsCarryTheBackgroundWork() {
+        let job = [BackgroundTask(kind: .shell, description: "tb land")]
+        var model = TranscriptModel(events: [done(1, turn: "t1", needs: "nothing")])
+        XCTAssertEqual(card(model, "ak:1")?.running, [])
+        XCTAssertFalse(model.setBackground(job).isEmpty)
+        XCTAssertEqual(card(model, "ak:1")?.running, job)
+        _ = model.setBackground([])
+        XCTAssertEqual(card(model, "ak:1")?.running, [])
+        var later = TranscriptModel()
+        _ = later.setBackground(job)
+        later.load(events: [done(1, turn: "t1", needs: "nothing")])
+        XCTAssertEqual(card(later, "ak:1")?.running, job)
+    }
+
     /// A follow-up's "?" toggles like its tick and goes with the ticks:
     /// one question each, or one over a list for several.
     func testFollowUpsAskedAboutGoWithTheTicks() {

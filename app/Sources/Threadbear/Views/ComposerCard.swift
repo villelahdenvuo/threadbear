@@ -290,7 +290,7 @@ final class ComposerCardHost: NSView, TranscriptThreadHost {
         guard case .asks(let card) = row.content, let session = controller?.session, session.arrivingCard == card.seq else { return }
         session.arrivingCard = nil
         Self.settle(scroll)
-        if card.isDone, !collapsed, !Juice.reduceMotion { cell.drawDoneTickOn() }
+        if card.isDone, card.running.isEmpty, !collapsed, !Juice.reduceMotion { cell.drawDoneTickOn() }
     }
 
     static func settle(_ view: NSView) {

@@ -1841,18 +1841,31 @@ enum RowRenderer {
             .font: title, .foregroundColor: card.isOpen ? NSColor.labelColor : NSColor.secondaryLabelColor,
             .paragraphStyle: lineStyle, .baselineOffset: titleOffset,
         ]
-        output.append(symbol("checkmark", label: "Done", font: title, attributes: titleAttributes, color: .systemGreen))
-        output.append(NSAttributedString(string: " Done", attributes: titleAttributes))
+        // Background work still going (a land, a build, sub-agents): not
+        // done yet, whatever the agent said, so no Done and no Archive
+        // until it's over (Ville, 12 Nov). The card comes back as Done then.
+        let running = card.isOpen && !card.running.isEmpty
+        if running {
+            let waiting = titleAttributes.merging([.foregroundColor: NSColor.secondaryLabelColor]) { $1 }
+            output.append(symbol("hourglass", label: "Still running", font: title, attributes: waiting, color: .secondaryLabelColor))
+            output.append(NSAttributedString(string: " Still running", attributes: waiting))
+        } else {
+            output.append(symbol("checkmark", label: "Done", font: title, attributes: titleAttributes, color: .systemGreen))
+            output.append(NSAttributedString(string: " Done", attributes: titleAttributes))
+        }
         // Loose ends (protocol "Loose ends") only show when something's
         // left. Nothing left used to say "Nothing left open" beside Done;
         // Mike cut it (9 Nov), as Done on its own already says that.
         let ends = card.isOpen ? card.looseEnds : nil
-        output.append(NSAttributedString(string: "\t", attributes: titleAttributes))
-        output.append(NSAttributedString(string: "\u{00A0}\u{00A0}\u{00A0}Archive\u{00A0}\u{00A0}\u{00A0}", attributes: [
-            .font: button, .foregroundColor: AskButtonStyle.plain.textColor, .paragraphStyle: lineStyle, .baselineOffset: buttonOffset,
-            .tbAction: "archive", .tbButton: AskButtonStyle.plain.rawValue,
-        ]))
+        if !running {
+            output.append(NSAttributedString(string: "\t", attributes: titleAttributes))
+            output.append(NSAttributedString(string: "\u{00A0}\u{00A0}\u{00A0}Archive\u{00A0}\u{00A0}\u{00A0}", attributes: [
+                .font: button, .foregroundColor: AskButtonStyle.plain.textColor, .paragraphStyle: lineStyle, .baselineOffset: buttonOffset,
+                .tbAction: "archive", .tbButton: AskButtonStyle.plain.rawValue,
+            ]))
+        }
         guard card.isOpen else { return output }
+        // What's running is the transcript's last line, just above.
         let small = Theme.smallFont
         // The rows and their label sit in by the hover fill's padding, as
         // the text view clips anything drawn left of its text.

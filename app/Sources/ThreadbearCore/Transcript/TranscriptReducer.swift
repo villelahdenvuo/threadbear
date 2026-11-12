@@ -349,6 +349,16 @@ public struct TranscriptModel: Sendable {
         guard tasks != background else { return TranscriptChange() }
         background = tasks
         tailDirty = true
+        // And on the done cards, which hold Done and Archive meanwhile.
+        for cardId in asksRowForSeq.values {
+            guard case .asks(let card)? = item(id: cardId)?.content, card.isDone, card.running != tasks else { continue }
+            update(cardId) { content in
+                if case .asks(var card) = content {
+                    card.running = tasks
+                    content = .asks(card)
+                }
+            }
+        }
         return refreshRows()
     }
 
@@ -453,6 +463,13 @@ public struct TranscriptModel: Sendable {
             touched = true
         }
         return touched ? refreshRows() : TranscriptChange()
+    }
+
+    /// A new done card, with the background work going now (`running`).
+    private func done(_ card: AsksCard) -> AsksCard {
+        var card = card
+        card.running = background
+        return card
     }
 
     /// Mike ticked (or unticked) follow-ups on the done card from `seq`.
@@ -1001,7 +1018,7 @@ public struct TranscriptModel: Sendable {
                     // The done card: goes, as an asks card does, once Mike
                     // replies or the next turn ends.
                     let cardId = "ak:\(seq)"
-                    append(TranscriptRow(id: cardId, seq: seq, turnId: turnId ?? completion.turnId, content: .asks(AsksCard(seq: seq, asks: [], next: completion.next, pickedNext: nextPicks[seq] ?? [], explainNext: nextExplains[seq] ?? [], looseEnds: looseEnds?.seq == seq ? looseEnds?.ends : nil))))
+                    append(TranscriptRow(id: cardId, seq: seq, turnId: turnId ?? completion.turnId, content: .asks(done(AsksCard(seq: seq, asks: [], next: completion.next, pickedNext: nextPicks[seq] ?? [], explainNext: nextExplains[seq] ?? [], looseEnds: looseEnds?.seq == seq ? looseEnds?.ends : nil)))))
                     asksRowForSeq[seq] = cardId
                     openAsksRow = cardId
                 }
