@@ -427,8 +427,9 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
   else
     CARGO="$(command -v cargo || true)"
     [ -n "$CARGO" ] || [ ! -x "$HOME/.cargo/bin/cargo" ] || CARGO="$HOME/.cargo/bin/cargo"
-    # The client's tests start the mock runner, which needs its packages.
-    if [ -n "$CARGO" ] && [ ! -d "$ROOT/app/Tools/mock-runner/node_modules" ]; then
+    # The client's tests start the mock runner, which needs its packages:
+    # a finished install, not a folder that's there (deploy-steps.test.ts).
+    if [ -n "$CARGO" ] && [ ! -f "$ROOT/app/Tools/mock-runner/node_modules/.package-lock.json" ]; then
       step "mock runner packages" "$ROOT/app/Tools/mock-runner" npm ci --no-audit --no-fund
     fi
     cargo_step "desktop core tests" test --locked --no-fail-fast -p threadbear-core -p threadbear-client
