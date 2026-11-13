@@ -451,9 +451,12 @@ public struct AsksCard: Sendable, Hashable {
     /// Archive until it's all over, as the agent's "nothing needed" came
     /// while a land or a build was still going (Ville, 12 Nov).
     public var running: [BackgroundTask] = []
+    /// Review by another lab's findings and what the agent did about each.
+    public var review: LabReview?
 
-    public init(seq: Int, asks: [Ask], ticked: Set<Int> = [], isOpen: Bool = true, picks: [Int: Int] = [:], next: [String] = [], notes: [Int: AskNote] = [:], pickedNext: Set<Int> = [], explainNext: Set<Int> = [], looseEnds: [LooseEnd]? = nil) {
+    public init(seq: Int, asks: [Ask], ticked: Set<Int> = [], isOpen: Bool = true, picks: [Int: Int] = [:], next: [String] = [], notes: [Int: AskNote] = [:], pickedNext: Set<Int> = [], explainNext: Set<Int> = [], looseEnds: [LooseEnd]? = nil, review: LabReview? = nil) {
         self.seq = seq
+        self.review = review
         self.looseEnds = looseEnds
         self.notes = notes
         self.pickedNext = pickedNext

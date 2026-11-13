@@ -501,6 +501,39 @@ private struct MatchedGroup: ViewModifier {
     }
 }
 
+/// A group's tabs: side by side at their full width while they fit, and
+/// scrolling sideways once they don't, with the one showing kept in view.
+/// They ran off the bar's trailing edge, clipped, so a panel with many tabs
+/// had some no one could reach (Ville, 11 Nov 2026).
+struct TabStrip: View {
+    let group: DockGroup
+    /// The tabs' own width, so the strip is never wider than they are and
+    /// the empty bar beside them keeps the rest.
+    @State private var width: CGFloat?
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(group.panels, id: \.self) { panel in
+                        TabItem(panel: panel, selected: panel == group.selected, single: false)
+                            .id(panel)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            }
+            .frame(maxWidth: width ?? .infinity)
+            .onChange(of: group.selected, initial: true) { _, selected in
+                proxy.scrollTo(selected, anchor: .center)
+            }
+            .onChange(of: group.panels) { _, _ in
+                proxy.scrollTo(group.selected)
+            }
+        }
+    }
+}
+
 /// A group's title, or its tabs when it has several, and the showing
 /// panel's buttons. A title, a tab or the rest of the bar drags its panel
 /// once held (HoldDrag), and with `barsMoveWindow` a plain drag moves the
@@ -530,7 +563,7 @@ struct GroupHeader: View {
                 TabItem(panel: group.selected, selected: true, single: true)
             } else {
                 TabStrip(group: group)
-                    // Room for every tab before the empty bar beside them gets any.
+                    // The tabs' room before the empty bar beside them gets any.
                     .layoutPriority(1)
             }
             BarSpace(panel: group.selected, tabbed: !single)

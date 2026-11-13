@@ -192,10 +192,10 @@ export type RunnerJson = {
   // the list reads only checkHost). Only check.sh reads them.
   checkHost?: string;
   checkHosts?: string[];
-  // How the builds and checks Threadbear starts itself run on a Mac
-  // (background.ts): 'background' (taskpolicy -b, the default) or 'low'
-  // (nice -n 10). Read each time, so it needs no restart.
-  heavyWorkPriority?: 'background' | 'low';
+  // How far below normal the builds and tests Threadbear starts itself run:
+  // 'background', 'low' (the default) or 'normal' (background.ts). check.sh
+  // reads it too, for its fallback when no check host answers.
+  jobPriority?: string;
   bulletReplies?: boolean;
   oneReply?: boolean;
   labReview?: boolean;

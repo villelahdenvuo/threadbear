@@ -273,10 +273,11 @@ export function makeHarness(home = tmpDir(), cfgExtra: Partial<Config> = {}, dep
     defer: (fn) => fn(),
     // Patch trust has its own tests; the rest load every patch file.
     patchTrust: TRUST_ALL,
-    // Home patches from the temp home, never the real ~/.threadbear: with
-    // TRUST_ALL, a test thread ran the user's own patches against the temp
-    // data dir and wrote over their caches (a PRs panel, 12 Nov).
-    panelsRoot: home,
+    // Never the real ~/.threadbear/patches: trusted as above, a home patch
+    // would run its live commands (gh and the like) in every test's runner.
+    // Tyler Lusk's fork found it: a Mac with a few home patches took over 40
+    // minutes on the quick check and failed its timing tests (9 Nov 2026).
+    panelsRoot: tmpDir(),
     // Never touch a real Claude config dir from a test.
     copyTranscript: () => false,
     subagentTranscript: () => null,
