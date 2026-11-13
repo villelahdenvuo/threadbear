@@ -486,6 +486,8 @@ type Runtime = {
   looseEndsBusy?: boolean;
   // That check's look at git, while it's going (LooseEndsPart.checkLooseEnds).
   looseEndsGather?: Promise<LooseEnd[]>;
+  // Command calls that may set off runs, by itemId, until their result.
+  ciCalls?: Set<string>;
 };
 
 export type ThreadState = { rec: ThreadRecord; rt: Runtime };
