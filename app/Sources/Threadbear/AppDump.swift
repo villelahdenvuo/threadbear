@@ -345,6 +345,8 @@ struct AppDump: Encodable {
     var pools: [PoolInfo] = []
     /// The window's panels and where they are (WindowDock), in one line.
     var dock: String = ""
+    /// Whose panel layout is showing: "shared" or "project <id>" (PanelLayouts).
+    var panelLayout: String = ""
     /// The window's zoom, in percent (TextZoom).
     var zoom: Int = 100
     /// "end" or "empty" while the end-of-inbox note is up (InboxEndToast).
@@ -648,6 +650,7 @@ struct AppDump: Encodable {
                          rail: Pools.railSubtitle(pool, accounts: app.accounts), status: Pools.statusLine(pool, accounts: app.accounts, now: app.now))
             } : [],
             dock: app.dock.layout.summary.replacingOccurrences(of: "threadbear.", with: ""),
+            panelLayout: app.panelLayouts.current.map { "project \($0)" } ?? "shared",
             zoom: TextZoom.shared.percent,
             inboxEndNote: app.inboxEndNote.map { $0.empty ? "empty" : "end" },
             rails: rails(app),
@@ -1224,6 +1227,7 @@ struct AppDump: Encodable {
             + (composer.effort == "default" ? "" : "effort \(composer.effort), ") + Self.modeText(composer.mode))
         lines.append("  model chip: \(composer.chip)")
         lines.append("dock: \(dock)")
+        lines.append("panel layout: \(panelLayout)")
         if !pools.isEmpty {
             lines.append("pools:")
             for pool in pools {
