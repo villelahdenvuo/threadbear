@@ -597,7 +597,9 @@ private struct TabStrip: View {
     }
 
     private var overflowMenu: some View {
-        Menu {
+        // The items' label style, as the app's IconMenu sets it: without it
+        // macOS hides the selected tab's checkmark (MenuIconsTests).
+        Menu(content: {
             ForEach(group.panels, id: \.self) { panel in
                 Button {
                     controller.select(panel)
@@ -609,11 +611,12 @@ private struct TabStrip: View {
                     }
                 }
             }
-        } label: {
+            .labelStyle(.titleAndIcon)
+        }, label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: options.titleSize - 3, weight: .semibold))
                 .foregroundStyle(DockTheme.secondary)
-        }
+        })
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
