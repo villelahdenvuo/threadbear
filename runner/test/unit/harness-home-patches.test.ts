@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import os from 'node:os';
 import { makeHarness } from '../helpers/fakes.ts';
 
@@ -11,7 +10,10 @@ import { makeHarness } from '../helpers/fakes.ts';
 test("the test harness never loads the real home's patches", () => {
   const h = makeHarness();
   const root = (h.runner as unknown as { panelsRoot?: string }).panelsRoot ?? os.homedir();
-  assert.notEqual(root, os.homedir());
-  // A temp folder of its own (Mike's fix, 9 Nov, did the same).
-  assert.ok(root.startsWith(os.tmpdir()) || root.startsWith(fs.realpathSync(os.tmpdir())), root);
+  // Never the real account's home: since the unit tests run with a private
+  // temp HOME (private-home.ts), os.homedir() is that one, and the harness
+  // uses it.
+  assert.notEqual(root, os.userInfo().homedir);
+  assert.equal(root, os.homedir());
+  assert.ok(root.includes('tb-unit-home-'), root);
 });
