@@ -4811,14 +4811,20 @@ time a client asks and then from where it got to:
   marks that branch's commits `pushed`.
 
 **Runs** (experiment `ciRuns`, off by default). A commit marked `pushed`
-with a `repo`, or one whose short sha resolves in the thread's folder, and
+with a `repo`, or one whose short sha resolves in a repo on this Mac, and
 a `gh workflow run` that worked (its workflow, `--ref`, `-R`, and the run's
 id when gh printed the run's URL), and a `gh run rerun <id or URL>` (that
 run, by id) are watched. The runner asks the `gh`
 CLI on the user's own login, in the thread's folder through a login shell:
 `gh run list --commit <full sha>` for a commit, the first
 `workflow_dispatch` run of that workflow since the dispatch, then
-`gh run view <id>`, for a dispatch. It never reads a token. A re-run is
+`gh run view <id>`, for a dispatch. It never reads a token. A commit is
+looked for in the folder the push ran in (`git -C dir push`, or a `cd dir`
+before it in the same command), then the thread's folder, then the first
+repo or worktree one or two levels inside the thread's folder that has it
+(a thread working in a folder of repos); `gh run list` then runs in that
+repo's folder. A commit found nowhere, with no `repo`, is let go at once.
+A re-run is
 followed with `gh run view <id>`. The first look
 is 5 seconds after the result of such a command (told by the command, as
 gh prints nothing for a re-run outside a terminal, or by its output)

@@ -371,7 +371,9 @@ File references are where to look.
 - **GitHub Actions runs in Highlights** (`runner/src/ci-runs.ts`,
   experiment `ciRuns`, off by default): after a thread pushes a commit to
   GitHub or runs `gh workflow run` or `gh run rerun`, the runner runs `git rev-parse` and
-  `gh run list` / `gh run view` in the thread's folder, through your login
+  `gh run list` / `gh run view` in the thread's folder (or the repo the
+  pushed commit is in, found by running `find` and `git rev-parse` on the
+  repos one or two levels inside the thread's folder), through your login
   shell and your own `gh` login (it never reads the token). It asks 5
   seconds after the push, then every 15 seconds to 2 minutes, only while a
   run is queued or running, and stops after 2 hours at most. Never for an

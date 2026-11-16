@@ -11,7 +11,8 @@ import type { RunnerPart } from './part.ts';
 import type { EventBody } from '../protocol.ts';
 import { experimentOn } from '../experiments.ts';
 import { loginShell } from '../system-tools.ts';
-import { addWatches, check, delayMs, emptyCiRuns, shellQuote, watching, type Gh, type RevParse } from '../ci-runs.ts';
+import path from 'node:path';
+import { addWatches, check, delayMs, emptyCiRuns, shellQuote, watching, type FindCommit, type Gh } from '../ci-runs.ts';
 
 // The first look waits a little: GitHub makes the runs a few seconds after
 // the push.
@@ -24,6 +25,15 @@ const MAYBE_RUNS = /->|workflow_dispatch|actions\/runs\/|[Rr]equested rerun/;
 const MAYBE_RUN_COMMAND = /\bgit\b[^\n]*\bpush\b|\bgh\s+(?:workflow\s+run|run\s+rerun)\b/;
 
 export type CiShell = (cwd: string, command: string) => Promise<string>;
+
+// A thread in a folder of repos pushes from one of them after a `cd` in an
+// earlier command, often with the push's output cut short (`| tail -2`), so
+// neither its folder nor its repo is known (14 Nov 2026). The first repo or
+// worktree a level or two down that has the commit: its folder, then the
+// full sha. One shell, at most 300 repos, once per pushed commit.
+function findInRepos(commit: string): string {
+  return `find . -mindepth 2 -maxdepth 3 -name .git -not -path '*/node_modules/*' 2>/dev/null | head -n 300 | while IFS= read -r g; do d="\${g%/.git}"; f=$(git -C "$d" rev-parse --verify -q ${commit} 2>/dev/null) && { printf '%s\\n%s\\n' "$d" "$f"; break; }; done; true`;
+}
 
 function shell(cwd: string, command: string): Promise<string> {
   const [bin, ...args] = loginShell();
@@ -69,20 +79,31 @@ export const ciRunsPart = {
     if (!state || st.rt.deleted || st.rec.archivedAt || !experimentOn(this.cfg.home, 'ciRuns')) return;
     const run = this.ciShell ?? shell;
     const cwd = st.rec.cwd;
-    const gh: Gh = (args) => run(cwd, `gh ${shellQuote(args)}`);
-    const revParse: RevParse = async (sha) => {
+    const gh: Gh = (args, dir) => run(dir ?? cwd, `gh ${shellQuote(args)}`);
+    const findCommit: FindCommit = async (sha, dir) => {
       if (!/^[0-9a-f]{4,40}$/.test(sha)) return undefined;
-      try {
-        return (await run(cwd, `git rev-parse --verify -q ${shellQuote([`${sha}^{commit}`])}`)).trim() || undefined;
-      } catch {
-        return undefined;
+      const commit = shellQuote([`${sha}^{commit}`]);
+      for (const at of dir && dir !== cwd ? [dir, cwd] : [cwd]) {
+        try {
+          const full = (await run(at, `git rev-parse --verify -q ${commit}`)).trim();
+          if (/^[0-9a-f]{40}$/.test(full)) return at === cwd ? { full } : { full, dir: at };
+        } catch {
+          // Not a repo, or not this one's commit.
+        }
       }
+      try {
+        const [found, full] = (await run(cwd, findInRepos(commit))).trim().split('\n');
+        if (found && /^[0-9a-f]{40}$/.test(full ?? '')) return { full: full!, dir: path.resolve(cwd, found) };
+      } catch {
+        // Nothing found.
+      }
+      return undefined;
     };
     st.rt.ciChecking = true;
     const open = state.watches.filter((w) => !w.done).length;
     let changed = false;
     try {
-      changed = await check(state, gh, revParse, this.clock.now());
+      changed = await check(state, gh, findCommit, this.clock.now());
     } finally {
       st.rt.ciChecking = false;
     }
