@@ -33,14 +33,14 @@ function checkout() {
   copy('runner/test/helpers/failed-files-reporter.mjs');
   // Every other step check.sh --quick runs, passing.
   put('runner/package.json', JSON.stringify({ scripts: { typecheck: 'true' } }));
-  put('runner/node_modules/.keep', '');
+  put('runner/node_modules/.package-lock.json', '{}'); // a finished install (check.sh packages_ready)
   put('runner/test/helpers/clean-env.ts', '');
   put('runner/test/unit/ok.test.ts', "import { test } from 'node:test';\ntest('ok', () => {});\n");
   put('package.json', JSON.stringify({ scripts: { 'convex:typecheck': 'true', 'web:typecheck': 'true', 'web:test': 'true' } }));
-  put('node_modules/.keep', '');
+  put('node_modules/.package-lock.json', '{}');
   put('app/Tools/ok.mjs', '');
   put('app/Tools/mock-runner/ok.mjs', '');
-  put('app/Tools/mock-runner/node_modules/.keep', '');
+  put('app/Tools/mock-runner/node_modules/.package-lock.json', '{}');
   put('desktop/.keep', '');
   // swift and cargo that only record what they were asked.
   const log = path.join(root, 'calls.log');

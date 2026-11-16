@@ -476,7 +476,7 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
     [ -n "$CARGO" ] || [ ! -x "$HOME/.cargo/bin/cargo" ] || CARGO="$HOME/.cargo/bin/cargo"
     # The client's tests start the mock runner, which needs its packages:
     # a finished install, not a folder that's there (deploy-steps.test.ts).
-    if [ -n "$CARGO" ] && [ ! -f "$ROOT/app/Tools/mock-runner/node_modules/.package-lock.json" ]; then
+    if [ -n "$CARGO" ] && ! packages_ready "$ROOT/app/Tools/mock-runner"; then
       step "mock runner packages" "$ROOT/app/Tools/mock-runner" npm ci --no-audit --no-fund
     fi
     cargo_step "desktop core tests" test --locked --no-fail-fast -p threadbear-core -p threadbear-client
@@ -525,7 +525,7 @@ if [ "$RUNNER_ONLY" = 0 ] && [ -n "$SWIFT_MOCK_NEEDS" ] && [ -n "$SWIFT_MOCK_FIL
   if [ "$E2E" = 1 ] && [ "$FALLBACK" != 1 ]; then
     skip "app mock tests" "--e2e runs on this Mac; ./check.sh --quick runs them on a check host"
   else
-  if [ ! -d "$ROOT/app/Tools/mock-runner/node_modules" ]; then
+  if ! packages_ready "$ROOT/app/Tools/mock-runner"; then
     step "mock runner packages" "$ROOT/app/Tools/mock-runner" npm ci --no-audit --no-fund
   fi
   swift_test_step "app mock tests" "$ROOT/app" env THREADBEAR_REQUIRE_MOCK=1 "${LIMITED[@]}" swift test --disable-keychain --filter "$SWIFT_MOCK_FILTER"
