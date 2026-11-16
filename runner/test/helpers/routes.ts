@@ -19,7 +19,7 @@ import { call, load, memoryBackend } from './convex-memory.ts';
 import { ConvexSync } from '../../src/sync.ts';
 import { Relay } from '../../src/relay.ts';
 import { nullLogger } from '../../src/log.ts';
-import type { ImageRef, LabReviewLedger } from '../../src/protocol.ts';
+import type { ApprovalSource, ImageRef, LabReviewLedger } from '../../src/protocol.ts';
 import type { Post } from '../../src/sync.ts';
 
 const OWNER = 'owner-key';
@@ -47,6 +47,8 @@ export type View = {
   // "The last turn failed"): a signed-out login on bruce read as an empty
   // reply on this Mac (canary, 13 Nov).
   failed: boolean;
+  // The open approval card's line saying what made it ask.
+  cardReason?: string;
 };
 
 export type Play = {
@@ -73,6 +75,8 @@ export type Play = {
   earlyStop(): void;
   /** The thread's login ran out and the runner moved it to another (runner/pools.ts moveLogin). */
   loginMoved(): void;
+  /** The agent's tool call asks, with the runner's reason and source, and the card stays open. */
+  askApproval(req: { name: string; title: string; input: Record<string, unknown>; reason?: string; source?: ApprovalSource }): void;
 };
 
 export async function threeWays(play: (p: Play) => void | Promise<void>) {
@@ -114,7 +118,7 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
   const here = (): View => {
     const t = h.runner.get(id);
     const events = h.runner.events(id, {}).events as Record<string, any>[];
-    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events) };
+    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events), cardReason: openCardReason(events) };
   };
   let relayEvents: Record<string, any>[] = [];
   const viaRelay = async (): Promise<View> => {
@@ -128,12 +132,12 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
     // sidebar's list, for the done card's own seq.
     const listed = relay.overlay(remote()).threads.find((t) => t.threadId === id) as { looseEnds?: { seq: number; ends: { text: string }[] } } | undefined;
     const ends = listed?.looseEnds && end && listed.looseEnds.seq === end.seq ? listed.looseEnds.ends.map((e) => e.text) : [];
-    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events) };
+    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events), cardReason: openCardReason(events) };
   };
   const viaPhone = async (): Promise<View> => {
     const r = (await call(b.ctx, mods.phone.thread!, { token: TOKEN, threadId: id })) as { thread: Record<string, any>; messages: { role: 'user' | 'assistant'; text: string; origin?: string }[] };
     const page = await call(b.ctx, mods.phone.messages!, { token: TOKEN, threadId: id, notes: true }) as { messages: { role: string; text: string }[] };
-    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: [], messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0, ...(m.origin ? { origin: m.origin } : {}) })), notes: page.messages.filter(m => m.role === 'note').map(m => m.text), failed: r.thread.status === 'error' };
+    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: [], messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0, ...(m.origin ? { origin: m.origin } : {}) })), notes: page.messages.filter(m => m.role === 'note').map(m => m.text), failed: r.thread.status === 'error', cardReason: r.thread.pendingApproval?.kind === 'approval' ? r.thread.pendingApproval.reason : undefined };
   };
   const views = { here: here(), relay: await viaRelay(), phone: await viaPhone() };
   await sync.stop();
@@ -157,6 +161,9 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
   const h = makeHarness();
   const sync = new ConvexSync({ config: { enabled: true, url: 'https://x.convex.cloud', name: runner.name, runnerId: runner.runnerId }, key: runner.key, home: h.cfg.home, runner: h.runner, version: '0.1.0+test', release: 'rel1', startedAt: '2026-10-27T00:00:00.000Z', clock: h.clock, log: nullLogger, post, upload: async () => 'st', subscriber: NO_SUBSCRIBER } as never);
   const ids: string[] = [];
+  // Cards go up once the sync is live: it mirrors a card from its event as it
+  // comes, and a sync started later reads back messages, not open cards.
+  const live: (() => void)[] = [];
   for (const play of plays) {
     const { thread } = h.runner.create({ text: 'Start', accountId: 'claude-3' });
     ids.push(thread.id);
@@ -197,6 +204,10 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
         h.runner.send(thread.id, text, [], { origin: 'phone' });
         h.adapter.last.init();
       },
+      askApproval: (req) => {
+        const toolUseId = `t${++n}`;
+        live.push(() => void s.sink.requestApproval({ toolUseId, canAlwaysAllow: false, signal: new AbortController().signal, ...req }));
+      },
       reviewed: (ledger) => {
         h.runner.threads.get(thread.id)!.rec.labReview = { ...ledger, delivered: ledger.rounds };
       },
@@ -216,6 +227,8 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
     while (h.runner.threads.get(id)?.rec.needs?.needs === 'nothing' && !h.runner.get(id).looseEnds && fs.readFileSync(path.join(h.cfg.home, 'runner.json'), 'utf8').includes('"looseEnds":true') && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
   }
   sync.start();
+  for (const ask of live) ask();
+  await new Promise((r) => setImmediate(r));
   await sync.flushNow();
   await sync.flushNow();
   // The sidebar's index (thread-index.ts), which another runner lists the
@@ -246,6 +259,13 @@ function loginNotes(events: Record<string, any>[]): string[] {
 
 function lastFailed(events: Record<string, any>[]): boolean {
   return events.filter((e) => e.type === 'turn.completed').at(-1)?.outcome === 'failed';
+
+}
+
+// The reason line of the approval card still open, if one is.
+function openCardReason(events: Record<string, any>[]): string | undefined {
+  const open = events.filter((e) => e.type === 'approval.requested' && !events.some((r) => r.type === 'approval.resolved' && r.approvalId === e.approvalId)).at(-1);
+  return open?.reason;
 }
 
 // The done card's follow-ups: the last turn's end.

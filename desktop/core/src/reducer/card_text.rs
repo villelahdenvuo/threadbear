@@ -65,6 +65,20 @@ impl ApprovalText {
         (!title.is_empty()).then(|| Self::shown(title))
     }
 
+    /// What made the card ask (docs/protocol.md, "Why a card asks"), for
+    /// the info line under its title: Auto's safety check, a file that runs
+    /// as code, a patch Threadbear can't follow (which, and the command), a
+    /// rule, an MCP tool. Ville, 14 Nov 2026: plain Writes asked in an Auto
+    /// thread and nothing on the card said why. Left out when it only
+    /// repeats the runner's own line above it.
+    pub fn ask_reason(request: &ApprovalRequest) -> Option<String> {
+        let reason = request.reason.as_deref().map(str::trim).filter(|r| !r.is_empty())?;
+        if Self::runner_reason(request).as_deref() == Some(Self::shown(reason).as_str()) {
+            return None;
+        }
+        Some(Self::shown(reason))
+    }
+
     /// The decision in a word or two.
     pub fn decision(decision: ApprovalDecision) -> &'static str {
         match decision {

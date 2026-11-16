@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { ClaudeAdapter, alwaysAllow, modelChoices, sdkPermissionMode, terminalMcpTools } from '../../src/adapters/claude/adapter.ts';
+import { ClaudeAdapter, alwaysAllow, askSource, modelChoices, sdkPermissionMode, terminalMcpTools } from '../../src/adapters/claude/adapter.ts';
 import type { SessionSink, AdapterOutput, ToolApprovalAnswer, ToolApprovalRequest } from '../../src/adapters/types.ts';
 import { ProcessRegistry } from '../../src/proc.ts';
 import { nullLogger } from '../../src/log.ts';
@@ -771,18 +771,54 @@ test('two cards listing the same call: each answer holds for the call as its own
 
 // David, 8 Nov 2026: an Auto thread's deploy waited on a card that never said
 // why the safety check had handed it to him. The CLI's reason goes on the card.
-test("a card says why it's asking, but not that the mode asks", async () => {
+test("a card says why it's asking, and names what asked", async () => {
   const { state, approvals } = start();
   const opts = (id: string, extra: Record<string, unknown>) => ({ signal: new AbortController().signal, toolUseID: id, agentID: 'a', ...extra });
+  const last = () => ({ source: approvals.at(-1)!.source, reason: approvals.at(-1)!.reason });
   await state.options.canUseTool('Bash', { command: './deploy.sh' }, opts('t1', { decisionReason: 'Deploys to a remote production host.', decisionReasonType: 'classifier' }));
-  assert.equal(approvals.at(-1)!.reason, "Auto mode's safety check couldn't clear this: Deploys to a remote production host.");
+  assert.deepEqual(last(), { source: 'classifier', reason: "Auto mode's safety check couldn't clear this: Deploys to a remote production host." });
   await state.options.canUseTool('Bash', { command: 'ls' }, opts('t2', { decisionReason: "The folder's permission rules aren't trusted for this thread.", decisionReasonType: 'hook' }));
-  assert.equal(approvals.at(-1)!.reason, "The folder's permission rules aren't trusted for this thread.");
-  // Every card in Ask before edits would say this.
+  assert.deepEqual(last(), { source: 'hook', reason: "A PreToolUse hook asked: The folder's permission rules aren't trusted for this thread." });
+  // Ask mode asking is said as Ask mode, not the CLI's "Current permission mode".
   await state.options.canUseTool('Bash', { command: 'ls' }, opts('t3', { decisionReason: 'Current permission mode requires approval', decisionReasonType: 'mode' }));
-  assert.equal(approvals.at(-1)!.reason, undefined);
+  assert.deepEqual(last(), { source: 'askMode', reason: 'Ask mode asks before every edit, command and web fetch.' });
   await state.options.canUseTool('Bash', { command: 'ls' }, opts('t4', { decisionReason: '  ' }));
-  assert.equal(approvals.at(-1)!.reason, undefined);
+  assert.equal(last().source, 'askMode');
+  await state.options.canUseTool('Bash', { command: 'rm -rf build' }, opts('t5', { decisionReason: 'x', decisionReasonType: 'rule', matchedAskRule: { source: 'project', toolName: 'Bash', ruleContent: 'rm:*' } }));
+  assert.deepEqual(last(), { source: 'rule', reason: 'The ask rule Bash(rm:*) in project settings asks for this.' });
+  await state.options.canUseTool('mcp__linear__save', { id: 1 }, opts('t6', {}));
+  assert.equal(last().source, 'mcp');
+  assert.match(last().reason!, /save is a tool from the linear MCP server/);
+  await state.options.canUseTool('Read', { file_path: '/x' }, opts('t7', { decisionReason: 'Reads \x1b[1m~/.ssh\x1b[0m', decisionReasonType: 'safetyCheck' }));
+  assert.deepEqual(last(), { source: 'safetyCheck', reason: "Claude Code's safety check asks for this: Reads ~/.ssh" });
+  await state.options.canUseTool('Glob', { pattern: '*' }, opts('t8', { decisionReasonType: 'other' }));
+  assert.deepEqual(last(), { source: 'cli', reason: 'Claude Code asked without saying why (other).' });
+  state.close!();
+});
+
+test('askSource: a write that runs as code, or might, says what and why; a tool Threadbear always asks about says so', () => {
+  assert.deepEqual(askSource({ name: 'Write', mode: 'auto', code: { source: 'code', why: "it's a Threadbear patch file" } }), {
+    source: 'code',
+    reason: "Threadbear runs this file as code: it's a Threadbear patch file. Edits to it always ask outside Full access.",
+  });
+  const unsure = "Ask and Auto threads ask before every file edit while ~/.threadbear/patches/at-desk.ts is loaded: Threadbear can't follow `node server.mjs` (line 3), as start-thread.ts runs scripts more than 12 deep, more than patch trust follows.";
+  assert.deepEqual(askSource({ name: 'Write', mode: 'auto', code: { source: 'unsure', why: unsure } }), { source: 'unsure', reason: unsure });
+  assert.equal(askSource({ name: 'Write', mode: 'auto', code: { source: 'error', why: "Threadbear couldn't check whether this file runs as code (boom), so it asks to be safe." } }).source, 'error');
+  // Takes over from the classifier's words: the hook is why it came to a card.
+  assert.equal(askSource({ name: 'Edit', mode: 'auto', code: { source: 'unsure', why: '' }, reasonType: 'classifier', reason: 'x' }).source, 'unsure');
+  assert.deepEqual(askSource({ name: 'mcp__threadbear__delete_thread', mode: 'full', alwaysAsk: true }), { source: 'alwaysAsk', reason: 'Threadbear always asks before delete_thread, in every mode.' });
+});
+
+// Ville, 14 Nov 2026: plain Writes asked in an Auto thread and the card gave
+// no reason; it was a home patch Threadbear couldn't follow. The card says so.
+test("an edit that asks because a patch can't be followed says which patch and command on the card", async () => {
+  const why = "Ask and Auto threads ask before every file edit while ~/.threadbear/patches/p.ts is loaded: Threadbear can't follow `node x.mjs`, as it runs scripts more than 12 deep.";
+  const { state, approvals } = start([], { permissionMode: 'auto', runsAsCode: () => 'unsure', codeWriteWhy: () => ({ source: 'unsure', why }) });
+  const input = { file_path: `${state.options.cwd}/notes.md`, content: 'hi' };
+  await state.options.canUseTool('Write', input, { signal: new AbortController().signal, toolUseID: 'w1', agentID: 'a' });
+  assert.equal(approvals.at(-1)!.source, 'unsure');
+  assert.equal(approvals.at(-1)!.reason, why);
+  assert.match(approvals.at(-1)!.title, /can't tell whether this file runs as code/);
   state.close!();
 });
 

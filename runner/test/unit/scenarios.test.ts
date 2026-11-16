@@ -14,7 +14,7 @@ import { threeWays, type View } from '../helpers/routes.ts';
 import { SCENARIOS } from '../helpers/scenario-list.ts';
 
 type Route = 'relay' | 'phone';
-type Field = 'needs' | 'asks' | 'next' | 'looseEnds' | 'review' | 'plans' | 'messages' | 'notes' | 'pictures' | 'failed' | 'origins';
+type Field = 'needs' | 'asks' | 'next' | 'looseEnds' | 'review' | 'plans' | 'messages' | 'notes' | 'pictures' | 'failed' | 'origins' | 'cardReason';
 
 // Differences that are meant, each with why. A test below fails once one
 // of these stops being a difference, so the list can't outlive its reason.
@@ -34,10 +34,10 @@ function pick(v: View, field: Field): unknown {
     case 'origins':
       return v.messages.map((m) => m.origin ?? null);
     default:
-      return field === 'needs' || field === 'review' ? (v[field] ?? null) : v[field];
+      return field === 'needs' || field === 'review' || field === 'cardReason' ? (v[field] ?? null) : v[field];
   }
 }
-const FIELDS: Field[] = ['needs', 'asks', 'next', 'looseEnds', 'review', 'plans', 'messages', 'notes', 'pictures', 'failed', 'origins'];
+const FIELDS: Field[] = ['needs', 'asks', 'next', 'looseEnds', 'review', 'plans', 'messages', 'notes', 'pictures', 'failed', 'origins', 'cardReason'];
 const known = (route: Route, field: Field) => KNOWN.find((k) => k.route === route && k.field === field);
 
 for (const s of SCENARIOS) {
@@ -85,4 +85,10 @@ test('another Mac reopens a thread with only the reply its pane missed', async (
   const reply = await relay.call(threadId, 'threads.subscribe', { afterSeq: Math.max(...relayEvents.map((e) => Number(e.seq))), relaySeen: seen }) as { events: Record<string, unknown>[] };
   assert.deepEqual(reply.events.map((e) => e.seq), [missing.seq]);
   assert.equal(reply.events[0]?.text, 'The earlier reply.');
+});
+
+test("a card's reason reaches all three, not just nowhere on each", async () => {
+  const s = SCENARIOS.find((x) => x.name === 'an approval card that says what made it ask')!;
+  const { views } = await threeWays(s.play);
+  for (const route of ['here', 'relay', 'phone'] as const) assert.match(views[route].cardReason ?? '', /can't follow `node server\.mjs`/, route);
 });

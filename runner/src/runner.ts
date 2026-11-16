@@ -2143,6 +2143,7 @@ export class Runner {
         ...(rt.claudeSkipped ? { untrustedProjectSettings: claudeSettingsWithoutCommands(rec.cwd) } : {}),
         // Read at each call, from the thread's folder then.
         runsAsCode: (file) => this.writeRunsAsCode(rec, file),
+        codeWriteWhy: (file) => this.codeWriteWhy(rec, file),
         ...(rt.claudeHeldGrants ? { heldGrants: true } : {}),
       },
       sink,

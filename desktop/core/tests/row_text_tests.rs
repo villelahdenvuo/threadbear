@@ -758,3 +758,32 @@ fn testAnUnreadablePayloadIsUnknownWithItsSeq() {
     assert_eq!(seq_as_text.seq, 12);
     assert_eq!(seq_as_text.payload, EventPayload::Error("Something went wrong".to_owned()));
 }
+
+/// Ville, 14 Nov 2026: plain Writes asked in an Auto thread and nothing on
+/// the card said why. The runner's `reason` names what asked, and the card
+/// shows it under the title, unless it only repeats the runner's own line.
+#[test]
+fn cards_say_what_made_them_ask() {
+    let event = json!({
+        "type": "approval.requested", "approvalId": "ap1", "itemId": "w1", "name": "Write",
+        "title": "Write notes.md (Threadbear can't tell whether this file runs as code)",
+        "input": {"file_path": "/x/notes.md", "content": "hi"}, "options": ["allow", "deny"],
+        "source": "unsure",
+        "reason": "Ask and Auto threads ask before every file edit while ~/.threadbear/patches/at-desk.ts is loaded: Threadbear can't follow `node server.mjs`, as start-thread.ts runs scripts more than 12 deep.\n"
+    });
+    let request = ApprovalRequest::decode(&event).expect("decodes");
+    assert_eq!(request.source.as_deref(), Some("unsure"));
+    let shown = ApprovalText::ask_reason(&request).expect("a line");
+    assert!(shown.contains("at-desk.ts") && shown.contains("`node server.mjs`"), "{shown}");
+    assert!(!shown.ends_with('\n'));
+    // None from a runner that doesn't send one.
+    assert_eq!(ApprovalText::ask_reason(&approval_request("Write", json!({}))), None);
+    // A threadbear tool's card already says it in the runner's line.
+    let mut raise = ApprovalRequest::new("ap2", "mcp__threadbear__update_thread", "Switch this thread to Full access", json!({}));
+    raise.reason = Some("Switch this thread to Full access".to_owned());
+    assert_eq!(ApprovalText::ask_reason(&raise), None);
+    // Characters that would hide or reorder text are written out.
+    let mut hidden = approval_request("Bash", json!({}));
+    hidden.reason = Some("A rule\u{2028}asks".to_owned());
+    assert_eq!(ApprovalText::ask_reason(&hidden).as_deref(), Some("A rule\u{27E8}U+2028\u{27E9}asks"));
+}

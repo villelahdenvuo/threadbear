@@ -856,6 +856,10 @@ pub struct ApprovalRequest {
     pub title: String,
     pub input: Value,
     pub options: Vec<ApprovalOption>,
+    /// What made it ask, in the runner's sentence (docs/protocol.md, "Why
+    /// a card asks"), and as a kind (`classifier`, `code`, `unsure`, ...).
+    pub reason: Option<String>,
+    pub source: Option<String>,
 }
 
 impl ApprovalRequest {
@@ -867,6 +871,8 @@ impl ApprovalRequest {
             title: title.to_owned(),
             input,
             options: vec![ApprovalOption::Allow, ApprovalOption::AllowAlways, ApprovalOption::Deny],
+            reason: None,
+            source: None,
         }
     }
 
@@ -891,6 +897,8 @@ impl ApprovalRequest {
             name,
             input: any(c, "input").unwrap_or_else(|| json!({})),
             options: if known.is_empty() { vec![ApprovalOption::Allow, ApprovalOption::Deny] } else { known },
+            reason: string(c, "reason").map(|r| text::trim_ws_nl(&r).to_owned()).filter(|r| !r.is_empty()),
+            source: string(c, "source"),
         }
     }
 }
@@ -1043,6 +1051,8 @@ impl ApprovalQueue {
                 name: name.unwrap_or_else(|| "Tool".to_owned()),
                 input: any(call, "input").unwrap_or_else(|| json!({})),
                 options: vec![ApprovalOption::Allow, ApprovalOption::Deny],
+                reason: None,
+                source: None,
             })
         });
         ApprovalQueue { approval_id: string(c, "approvalId").unwrap_or_default(), calls }

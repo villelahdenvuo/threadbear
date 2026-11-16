@@ -38,6 +38,12 @@ export const codeWriteReason = (kind: CodeWrite): string => `${codeWriteNote(kin
 // included) and an `.mcp.json`. The runner adds the files a patch it has
 // hashed covers, and the scripts the thread folder's Claude settings name.
 export function runsAsCodeByName(file: string, home: string = os.homedir()): boolean {
+  return codeByName(file, home) !== undefined;
+}
+
+// Why runsAsCodeByName says so, in a few words for the approval card
+// ("it's a patch file"), or undefined when it doesn't.
+export function codeByName(file: string, home: string = os.homedir()): string | undefined {
   // By the name as written and as the disk has it, without case: on macOS
   // `.Threadbear/Patches/x.ts` is the same file as `.threadbear/patches/x.ts`;
   // a symlink to a patch writes the patch, and a patch that is a symlink
@@ -45,15 +51,16 @@ export function runsAsCodeByName(file: string, home: string = os.homedir()): boo
   // The runner adds what such a link points at (writeRunsAsCode).
   const homeDir = path.join(path.resolve(home), '.threadbear');
   const homes = [homeDir.toLowerCase(), canonicalPath(homeDir).toLowerCase()];
-  return [path.resolve(file), canonicalPath(file)].some((p) => {
+  for (const p of [path.resolve(file), canonicalPath(file)]) {
     const abs = p.toLowerCase();
     const dir = path.dirname(abs);
-    if (path.basename(dir) === 'patches' && path.basename(path.dirname(dir)) === '.threadbear' && ['.ts', '.js', '.mjs'].includes(path.extname(abs))) return true;
-    if (homes.some((h) => isInside(abs, h))) return true;
+    if (path.basename(dir) === 'patches' && path.basename(path.dirname(dir)) === '.threadbear' && ['.ts', '.js', '.mjs'].includes(path.extname(abs))) return "it's a Threadbear patch file";
+    if (homes.some((h) => isInside(abs, h))) return "it's in ~/.threadbear, which home patches load from";
     const name = path.basename(abs);
-    if (name === '.mcp.json') return true;
-    return path.basename(dir) === '.claude' && /^settings(\..*)?\.json$/.test(name);
-  });
+    if (name === '.mcp.json') return "it's an .mcp.json, which starts MCP servers";
+    if (path.basename(dir) === '.claude' && /^settings(\..*)?\.json$/.test(name)) return "it's a Claude Code settings file, which can start hooks";
+  }
+  return undefined;
 }
 
 // `file` with the symlinks on its way resolved and each name as the disk
@@ -83,3 +90,8 @@ function isInside(file: string, dir: string): boolean {
   const rel = path.relative(dir, file);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
+
+// Why an edit asks as code, for the approval card's reason line: `code` the
+// file runs, `unsure` a patch runs something Threadbear can't follow (the
+// patch, the command and the problem), `error` the check itself failed.
+export type CodeWriteWhy = { source: 'code' | 'unsure' | 'error'; why: string };

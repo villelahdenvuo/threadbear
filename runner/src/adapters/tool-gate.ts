@@ -44,6 +44,9 @@ export async function gateThreadbearTool(deps: ToolGateDeps, call: ToolGateCall)
     canAlwaysAllow: !alwaysAsk,
     signal: call.signal,
     fullAllows: !alwaysAsk,
+    ...(alwaysAsk
+      ? { source: 'alwaysAsk' as const, reason: `Threadbear always asks before ${fullName.split('__').pop()}, in every mode.` }
+      : { source: 'mcp' as const, reason: "Threadbear's own tools that change something ask outside Full access until you always allow one." }),
   });
   if (ans.decision !== 'allow' && ans.decision !== 'allowAlways') {
     return { allowed: false, message: ans.message || (ans.decision === 'expired' ? 'The request expired before the user answered.' : 'The user denied this. Ask them how to proceed.') };

@@ -155,6 +155,22 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    // Ville, 14 Nov 2026: a plain Write asked in an Auto thread and no card
+    // said why (a home patch Threadbear couldn't follow). Each says what asked.
+    name: "an approval card that says what made it ask",
+    shows: ['Write notes.md', "Threadbear can't follow `node server.mjs`"],
+    play: (p) => {
+      p.say('Writing the notes.');
+      p.askApproval({
+        name: 'Write',
+        title: 'Write notes.md',
+        input: { file_path: 'notes.md', content: 'hi' },
+        source: 'unsure',
+        reason: "Ask and Auto threads ask before every file edit while ~/.threadbear/patches/at-desk.ts is loaded: Threadbear can't follow `node server.mjs`, as start-thread.ts runs scripts more than 12 deep.",
+      });
+    },
+  },
+  {
     name: 'a reply with no card',
     shows: ['Just an answer.'],
     play: (p) => {

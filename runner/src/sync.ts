@@ -140,7 +140,7 @@ export type SyncConfig = {
 // lower one means its backend hasn't been deployed since this runner was:
 // said in runner.status, tb status and the log rather than stopping, since
 // the runner only adds to what it sends while the number stays the same.
-export const BACKEND_API_VERSION = 79;
+export const BACKEND_API_VERSION = 80;
 // From this one a message row can be a login's note (role "note"): a thread
 // that moved to another login or is waiting for room says so on another Mac.
 export const LOGIN_NOTES_API_VERSION = 78;
@@ -347,6 +347,10 @@ const PLAN_LOOKBACK = 20_000;
 // every message's text. An older backend's validator would turn the row
 // down, so it goes without.
 export const KEYWORDS_API_VERSION = 74;
+// From this one an approval card on a thread row carries `reason`, what made
+// it ask (docs/protocol.md, "Why a card asks"), for the phone. An older
+// backend's validator would turn the row down, so it goes without.
+export const CARD_REASON_API_VERSION = 80;
 // How far back a start looks for pictures, as new ones go up as they come.
 // Reading a whole log for each thread is too much to do for all of them on
 // every start, and it's the threads in use that Mike opens on the phone.
@@ -405,7 +409,7 @@ export type SyncStatus = {
 // The approval or question a thread is waiting on, as the phone sees it.
 export type PendingApproval =
   // seq: the event's (API 44), for the main Mac's transcript of this thread.
-  | { approvalId: string; kind: 'approval'; seq?: number; name: string; title: string; options: ApprovalOption[]; inputSummary?: string; planSeq?: number }
+  | { approvalId: string; kind: 'approval'; seq?: number; name: string; title: string; options: ApprovalOption[]; inputSummary?: string; planSeq?: number; reason?: string }
   | { approvalId: string; kind: 'question'; seq?: number; questions: Question[] }
   // docs/protocol.md, "Secrets": key is the runner's public key, which the
   // phone seals its answer to.
@@ -1023,7 +1027,7 @@ function phoneAnswers(raw: unknown): AskAnswer[] | undefined {
 export function forBackend(d: ThreadDoc, v: number, now: number): ThreadDoc {
   const asks = d.asks !== undefined || d.asksSeq !== undefined || d.next !== undefined;
   const sections = d.needs !== undefined || d.pendingReviews !== undefined || d.waitingForRoom !== undefined;
-  if ((v >= SHARE_API_VERSION || !d.share) && (v >= WOKE_API_VERSION || !d.woke) && (v >= ASKS_API_VERSION || !asks) && (v >= OPTION_NOTES_API_VERSION || !d.asks?.some((a) => a.optionNotes)) && (v >= LOOSE_ENDS_API_VERSION || !d.looseEnds) && (v >= RELAY_CARDS_API_VERSION || (!d.review && !d.cardTurn)) && (v >= SECTIONS_API_VERSION || !sections) && (v >= STARTED_BY_API_VERSION || !d.startedBy) && (v >= STARS_API_VERSION || !d.starredAt) && (v >= LINKS_API_VERSION || !d.links) && (v >= ASKED_API_VERSION || !d.asked) && (v >= KEYWORDS_API_VERSION || !d.keywords) && (v >= WAKE_NOTE_API_VERSION || !d.wakeNote) && (v >= NETWORK_WAIT_API_VERSION || !d.waitingForNetwork) && (v >= SECRETS_API_VERSION || d.pendingApproval?.kind !== 'secret') && (v >= RELAY_API_VERSION || d.pendingApproval?.seq === undefined) && (v >= PLAN_API_VERSION || d.pendingApproval?.kind !== 'approval' || d.pendingApproval.planSeq === undefined)) return d;
+  if ((v >= SHARE_API_VERSION || !d.share) && (v >= WOKE_API_VERSION || !d.woke) && (v >= ASKS_API_VERSION || !asks) && (v >= OPTION_NOTES_API_VERSION || !d.asks?.some((a) => a.optionNotes)) && (v >= LOOSE_ENDS_API_VERSION || !d.looseEnds) && (v >= RELAY_CARDS_API_VERSION || (!d.review && !d.cardTurn)) && (v >= SECTIONS_API_VERSION || !sections) && (v >= STARTED_BY_API_VERSION || !d.startedBy) && (v >= STARS_API_VERSION || !d.starredAt) && (v >= LINKS_API_VERSION || !d.links) && (v >= ASKED_API_VERSION || !d.asked) && (v >= KEYWORDS_API_VERSION || !d.keywords) && (v >= WAKE_NOTE_API_VERSION || !d.wakeNote) && (v >= NETWORK_WAIT_API_VERSION || !d.waitingForNetwork) && (v >= SECRETS_API_VERSION || d.pendingApproval?.kind !== 'secret') && (v >= RELAY_API_VERSION || d.pendingApproval?.seq === undefined) && (v >= PLAN_API_VERSION || d.pendingApproval?.kind !== 'approval' || d.pendingApproval.planSeq === undefined) && (v >= CARD_REASON_API_VERSION || d.pendingApproval?.kind !== 'approval' || d.pendingApproval.reason === undefined)) return d;
   const out = { ...d };
   if (v < SECTIONS_API_VERSION) {
     delete out.needs;
@@ -1039,6 +1043,10 @@ export function forBackend(d: ThreadDoc, v: number, now: number): ThreadDoc {
   }
   if (v < PLAN_API_VERSION && out.pendingApproval?.kind === 'approval' && out.pendingApproval.planSeq !== undefined) {
     const { planSeq: _planSeq, ...rest } = out.pendingApproval;
+    out.pendingApproval = rest as PendingApproval;
+  }
+  if (v < CARD_REASON_API_VERSION && out.pendingApproval?.kind === 'approval' && out.pendingApproval.reason !== undefined) {
+    const { reason: _reason, ...rest } = out.pendingApproval;
     out.pendingApproval = rest as PendingApproval;
   }
   if (v < WOKE_API_VERSION) delete out.woke;
@@ -2365,6 +2373,8 @@ export class ConvexSync {
         options: whole ? e.options : e.options.filter((o) => o !== 'allow' && o !== 'allowAlways'),
         ...(summary ? { inputSummary: summary } : {}),
         ...(planSeq !== undefined ? { planSeq } : {}),
+        // What made it ask, scrubbed as the line is: it can name a path.
+        ...(typeof e.reason === 'string' && e.reason ? { reason: this.scrubber.safeText(e.reason).slice(0, 1000) } : {}),
       });
     } else if (e.type === 'question.requested') {
       this.addCard(threadId, { approvalId: e.approvalId, kind: 'question', seq: e.seq, questions: e.questions });

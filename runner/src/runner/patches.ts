@@ -14,7 +14,7 @@ import { isDirectory } from '../fsutil.ts';
 import { commandFiles, commandFilesOutside, isPatchFile, namedPaths, patchHash, scanModule, type ClaudeVerdict, type PatchHash } from '../patch-trust.ts';
 import type { AgentWrite } from '../adapters/types.ts';
 import { CLAUDE_PATCH_ID, claudeCommands, claudeOptions, settingsCommands, settingsNamedPaths, type ClaudeOptions } from '../claude-trust.ts';
-import { canonicalPath, runsAsCodeByName, type CodeWrite } from '../code-writes.ts';
+import { canonicalPath, codeByName, type CodeWrite, type CodeWriteWhy } from '../code-writes.ts';
 import { patchCommands, sayValue } from '../patch-commands.ts';
 import type { PatchInfo } from '../protocol.ts';
 import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, runCommand, PATCH_SH_MAX_BYTES, type CommandOutcome, type PanelRender, type PatchSet, type PatchThread, type ProjectFolder, projectPatchFiles } from '../patches.ts';
@@ -213,9 +213,14 @@ export function editsAskText(patch: string, why: UnsureWhy | undefined): string 
   return redact(editsAskWords(patch, why));
 }
 
-function editsAskWords(patch: string, why: UnsureWhy | undefined): string {
+// A path as the card and notes show it: ~ for the home folder.
+function tilde(file: string): string {
   const home = os.homedir();
-  const name = patch.startsWith(home + path.sep) ? `~${patch.slice(home.length)}` : patch;
+  return file.startsWith(home + path.sep) ? `~${file.slice(home.length)}` : file;
+}
+
+function editsAskWords(patch: string, why: UnsureWhy | undefined): string {
+  const name = tilde(patch);
   const head = `Ask and Auto threads ask before every file edit while ${name} is loaded`;
   if (!why) return `${head}, as Threadbear can't tell what it runs.`;
   const real = (f: string) => canonicalPath(f).toLowerCase();
@@ -228,7 +233,10 @@ function editsAskWords(patch: string, why: UnsureWhy | undefined): string {
     .replace(/\.$/, '');
   if (!why.command) return `${head}: ${problem}${line}.${why.fix ? ` ${why.fix}` : ''}`;
   const shown = commandShown(why.command);
-  return `${head}: Threadbear can't follow \`${shown}\`${line}, as it ${problem}. ${EDITS_ASK_FIX}`;
+  // A problem can start with the file it's in ("lib.ts runs scripts more
+  // than 12 deep"), which "as it" made garbled (Ville, 14 Nov 2026).
+  const as = /^(runs|sources|imports|reads|loads|uses|calls|names|is|has|can't|isn't|doesn't|starts|spawns|executes|evaluates)\b/.test(problem) ? 'as it' : 'as';
+  return `${head}: Threadbear can't follow \`${shown}\`${line}, ${as} ${problem}. ${EDITS_ASK_FIX}`;
 }
 
 // A command as the note shows it: its first few words, with anything after
@@ -546,23 +554,39 @@ export const patchesPart = {
   //   (`npm test`, a tool on PATH) is the folder's own code, run as its
   //   owner set it up, and isn't followed.
   writeRunsAsCode(this: Runner, rec: ThreadRecord, file: string): CodeWrite {
+    return this.checkCodeWrite(rec, file).kind;
+  },
+
+  // Why an edit of `file` asks as code, for the card's reason line
+  // (docs/protocol.md, "Why a card asks"), or undefined when it doesn't.
+  codeWriteWhy(this: Runner, rec: ThreadRecord, file: string): CodeWriteWhy | undefined {
+    const c = this.checkCodeWrite(rec, file);
+    if (!c.kind) return undefined;
+    return { source: c.error ? 'error' : c.kind === 'unsure' ? 'unsure' : 'code', why: c.why ?? '' };
+  },
+
+  // writeRunsAsCode with what made it so.
+  checkCodeWrite(this: Runner, rec: ThreadRecord, file: string): { kind: CodeWrite; why?: string; error?: boolean } {
     const cwd = rec.cwd;
     const home = this.panelsRoot ?? os.homedir();
     const real = canonicalPath(file).toLowerCase();
     const same = (f: string) => canonicalPath(f).toLowerCase() === real;
-    if (runsAsCodeByName(file, home) || this.patchTrust.covers(canonicalPath(file))) return true;
+    const byName = codeByName(file, home);
+    if (byName) return { kind: true, why: byName };
+    if (this.patchTrust.covers(canonicalPath(file))) return { kind: true, why: 'a patch Threadbear has trusted runs it' };
+    const yes = (why: string) => ({ kind: true, why });
     try {
       const data = canonicalPath(this.cfg.home).toLowerCase();
       const rel = path.relative(data, real);
-      if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return true;
-      if (same(path.join(os.homedir(), '.claude.json'))) return true;
+      if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return yes("it's in Threadbear's data folder");
+      if (same(path.join(os.homedir(), '.claude.json'))) return yes("it's Claude Code's ~/.claude.json, which can start MCP servers");
       const logins = new Set([path.join(os.homedir(), '.claude'), ...this.accounts.list().filter((a) => a.provider === 'claude' && a.configDir).map((a) => a.configDir!)]);
       // A settings file straight in a login's folder by its name, there yet
       // or not: writing a new one adds hooks as surely as changing one
       // (Daybreak, 7 Nov 2026: a Token Stats login with no settings.json
       // yet, outside the data dir and not named .claude, lost this when
       // the list below became the files that exist).
-      if (LOGIN_SETTINGS.test(path.basename(real)) && [...logins].some((dir) => canonicalPath(dir).toLowerCase() === path.dirname(real))) return true;
+      if (LOGIN_SETTINGS.test(path.basename(real)) && [...logins].some((dir) => canonicalPath(dir).toLowerCase() === path.dirname(real))) return yes("it's a Claude login's settings file, which can start hooks");
       const settings: { file: string; dir: string }[] = [];
       for (const dir of logins) {
         if (!fs.existsSync(dir)) continue;
@@ -570,8 +594,8 @@ export const patchesPart = {
       }
       for (const rel of ['.claude/settings.json', '.claude/settings.local.json']) settings.push({ file: path.join(cwd, rel), dir: cwd });
       for (const s of settings) {
-        if (same(s.file)) return true;
-        if (settingsNamedPaths(s.file, s.dir, os.homedir(), cwd).some(same)) return true;
+        if (same(s.file)) return yes("it's a Claude Code settings file, which can start hooks");
+        if (settingsNamedPaths(s.file, s.dir, os.homedir(), cwd).some(same)) return yes(`${tilde(s.file)} names it`);
         // Each command as a shell runs it, from where hooks run (the
         // thread's folder) and the login's: the script it names, quoted
         // names with spaces too, and what that imports or runs in turn.
@@ -581,11 +605,11 @@ export const patchesPart = {
         // for him, in the fix's report).
         for (const command of settingsCommands(s.file)) {
           const text = command.replace(/\$\{?CLAUDE_CONFIG_DIR\}?/g, s.dir).replace(/\$\{?CLAUDE_PROJECT_DIR\}?/g, cwd);
-          for (const from of new Set([cwd, s.dir])) if (commandFiles(text, from).files.some(same)) return true;
+          for (const from of new Set([cwd, s.dir])) if (commandFiles(text, from).files.some(same)) return yes(`a hook in ${tilde(s.file)} runs it`);
         }
       }
       const found = claudeCommands(cwd, home);
-      if (found && [...found.files, ...found.named].some(same)) return true;
+      if (found && [...found.files, ...found.named].some(same)) return yes("a Claude command or skill the thread loads runs it");
       // Every patch folder the thread reads, as loadPatchSet does, its
       // projects' too, as their hooks run at the end of its turns: the ones
       // that load without a hash.
@@ -601,22 +625,26 @@ export const patchesPart = {
         for (const name of fs.readdirSync(dir)) {
           if (!PATCH_EXTENSIONS.includes(path.extname(name)) || name.endsWith('.d.ts') || name.startsWith('.')) continue;
           const p = path.join(dir, name);
-          if (same(p)) return true;
+          if (same(p)) return yes("it's a Threadbear patch file");
           let scan: CodeScan;
           try {
             scan = codeOfUnhashedPatch(p, from, this.clock.now());
           } catch {
             continue; // can't be read, so can't be loaded either
           }
-          if (scan.files.has(real)) return true;
+          if (scan.files.has(real)) return yes(`the patch ${tilde(p)} runs it`);
           if (scan.all) unsure ??= { patch: p, ...(scan.why ? { why: scan.why } : {}) };
         }
       }
-      if (!unsure) return false;
+      if (!unsure) return { kind: false };
       this.noteEditsAsk(rec.id, unsure.patch, unsure.why);
-      return 'unsure';
-    } catch {
-      return 'unsure';
+      return { kind: 'unsure', why: editsAskText(unsure.patch, unsure.why) };
+    } catch (err) {
+      // Asks to be safe, and says so: this path gave no reason at all
+      // (Ville's Auto thread, 14 Nov 2026).
+      const error = err instanceof Error ? err.message : String(err);
+      this.log.warn('checking whether a write runs as code failed', { threadId: rec.id, error });
+      return { kind: 'unsure', error: true, why: redact(`Threadbear couldn't check whether this file runs as code (${error.slice(0, 300)}), so it asks to be safe.`) };
     }
   },
 
