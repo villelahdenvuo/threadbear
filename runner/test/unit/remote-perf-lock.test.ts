@@ -9,11 +9,15 @@ import { test } from 'node:test';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 
-// On Ville's Mac the --try runs fail: something sends KILL to the fake ssh
-// within a second (17 Nov 2026, also on plain main; perf-lock.pl --try alone
-// works). Until that's found, a check there can skip them with
-// THREADBEAR_SKIP_REMOTE_TRY_TESTS=1. Every other Mac and CI still runs them.
+// On Ville's Mac SentinelOne sends KILL to perl within a second in the --try
+// runs, before perf-lock.pl's first line: the same command line without --try
+// runs (17 Nov 2026). A check there can skip them with
+// THREADBEAR_SKIP_REMOTE_TRY_TESTS=1, but the runner's update check drops
+// THREADBEAR_* variables, so a run killed that way on a Mac with SentinelOne
+// skips by itself too. Every other Mac and CI still runs them.
 const skipTry = process.env.THREADBEAR_SKIP_REMOTE_TRY_TESTS === '1' && 'the fake ssh is killed on this Mac (THREADBEAR_SKIP_REMOTE_TRY_TESTS)';
+const sentinelOne = fs.existsSync('/Library/Sentinel/sentinel-agent.bundle');
+const killedBySentinel = (code: unknown, output: string) => sentinelOne && code === 137 && /Killed: 9/.test(output);
 for (const mode of ['ordinary', 'perf', 'try', 'try-env', 'busy-copy', 'busy-run']) test(`remote.sh host leases: ${mode}`, { skip: mode === 'ordinary' || mode === 'perf' ? false : skipTry }, async (t) => {
   const perf = mode === 'perf';
   const tryOnly = mode === 'try' || mode.startsWith('busy-');
@@ -63,19 +67,24 @@ echo 'fake 0 0 41943040 0% /'
   let output = '';
   child.stdout!.on('data', (s) => { output += s; });
   child.stderr!.on('data', (s) => { output += s; });
-  const done = new Promise((r) => child.on('exit', r));
+  // close, not exit: the output is all in by then, for killedBySentinel.
+  let exited = false;
+  const done = new Promise((r) => child.on('close', (c) => { exited = true; r(c); }));
   const timeout = setTimeout(() => child.kill('SIGTERM'), 120_000);
   t.after(() => clearTimeout(timeout));
   if (mode === 'busy-run') {
     const end = Date.now() + 10_000;
-    while (!fs.existsSync(path.join(home, 'start-holder'))) {
+    while (!fs.existsSync(path.join(home, 'start-holder')) && !exited) {
       assert.ok(Date.now() < end, output);
       await new Promise((r) => setTimeout(r, 20));
     }
-    await hold();
-    fs.writeFileSync(path.join(home, 'holder-ready'), '');
+    if (!exited) {
+      await hold();
+      fs.writeFileSync(path.join(home, 'holder-ready'), '');
+    }
   }
   const code = await done;
+  if (killedBySentinel(code, output)) { t.skip('SentinelOne killed the --try run on this Mac'); return; }
   if (mode.startsWith('busy-')) {
     assert.equal(code, 75, output);
     assert.doesNotMatch(output, /both locked|nested measurement/);
