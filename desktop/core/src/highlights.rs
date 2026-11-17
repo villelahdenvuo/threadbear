@@ -129,6 +129,8 @@ pub struct ThreadHighlights {
     pub highlights: Vec<Highlight>,
     pub edited: Vec<String>,
     pub brief: Option<String>,
+    /// GitHub Actions runs it set off, newest first (experiment ciRuns).
+    pub runs: Vec<CiRun>,
 }
 
 impl ThreadHighlights {
@@ -139,8 +141,110 @@ impl ThreadHighlights {
             highlights: value.get("highlights").and_then(Value::as_array).into_iter().flatten().filter_map(Highlight::decode).collect(),
             edited: value.get("edited").and_then(Value::as_array).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
             brief: value.get("brief").and_then(|b| b.get("text")).and_then(Value::as_str).map(str::to_owned),
+            runs: value.get("runs").and_then(Value::as_array).into_iter().flatten().filter_map(CiRun::decode).collect(),
         }
     }
+}
+
+/// A GitHub Actions run a thread's push or `gh workflow run` set off
+/// (docs/protocol.md, "Highlights", Runs; Swift's `CiRun`).
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct CiRun {
+    pub id: String,
+    pub workflow: String,
+    /// queued, running, passed, failed, cancelled or skipped; anything else
+    /// is from a newer runner and drawn plain, with no word.
+    pub status: String,
+    pub url: String,
+    pub sha: String,
+    pub branch: Option<String>,
+    pub event: Option<String>,
+    pub at_ms: Option<i64>,
+}
+
+impl CiRun {
+    /// One with no id or url is skipped: there'd be nothing to open.
+    pub fn decode(value: &Value) -> Option<CiRun> {
+        let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
+        let id = text("id").filter(|s| !s.is_empty())?;
+        let url = text("url").filter(|s| !s.is_empty())?;
+        Some(CiRun {
+            id,
+            url,
+            workflow: text("workflow").filter(|s| !s.is_empty()).unwrap_or_else(|| "Workflow".into()),
+            status: text("status").unwrap_or_default(),
+            sha: text("sha").unwrap_or_default(),
+            branch: text("branch").filter(|s| !s.is_empty()),
+            event: text("event"),
+            at_ms: text("at").as_deref().and_then(parse_ms),
+        })
+    }
+
+    /// The word at the end of its row; empty for a status this app doesn't know.
+    pub fn word(&self) -> &'static str {
+        match self.status.as_str() {
+            "queued" => "Queued",
+            "running" => "Running",
+            "passed" => "Passed",
+            "failed" => "Failed",
+            "cancelled" => "Cancelled",
+            "skipped" => "Skipped",
+            _ => "",
+        }
+    }
+
+    /// The SF Symbol for its status (`CiRunText.symbol`).
+    pub fn symbol(&self) -> &'static str {
+        match self.status.as_str() {
+            "queued" => "circle",
+            "running" => "circle.dashed",
+            "passed" => "checkmark.circle",
+            "failed" => "xmark.circle",
+            "cancelled" => "minus.circle",
+            _ => "arrow.uturn.right.circle",
+        }
+    }
+
+    /// "feat · a1b2c3d · 4m ago": its branch, commit and when it started.
+    pub fn detail(&self, now_ms: i64) -> String {
+        let mut bits: Vec<String> = vec![];
+        if let Some(branch) = &self.branch {
+            bits.push(branch.clone());
+        }
+        if !self.sha.is_empty() {
+            bits.push(self.sha.clone());
+        }
+        if let Some(at) = self.at_ms {
+            bits.push(run_ago(at, now_ms));
+        }
+        bits.join(" · ")
+    }
+
+    /// The row's tooltip.
+    pub fn tip(&self) -> String {
+        match self.word() {
+            "" => "Open the run on GitHub".into(),
+            word => format!("{word}. Click to open the run on GitHub."),
+        }
+    }
+}
+
+/// "just now", "4m ago", "3h ago", "2 days ago" (`CiRunText.ago`).
+pub fn run_ago(at_ms: i64, now_ms: i64) -> String {
+    let seconds = (now_ms - at_ms) / 1000;
+    if seconds < 60 {
+        return "just now".into();
+    }
+    let minutes = seconds / 60;
+    if minutes < 60 {
+        return format!("{minutes}m ago");
+    }
+    let hours = seconds / 3600;
+    if hours < 24 {
+        return format!("{hours}h ago");
+    }
+    let days = seconds / 86_400;
+    if days == 1 { "1 day ago".into() } else { format!("{days} days ago") }
 }
 
 /// A link on a project (`ProjectLink`).
@@ -202,6 +306,7 @@ impl ProjectInfo {
 /// fifteen commits, which pushed Files and Links off screen.
 pub const COMMIT_LIMIT: usize = 5;
 pub const LINK_LIMIT: usize = 10;
+pub const RUN_LIMIT: usize = 5;
 pub const SUBAGENT_LIMIT: usize = 5;
 
 /// What each folding heading is remembered as (`HighlightFold`). A fold holds
@@ -215,6 +320,7 @@ pub mod fold {
     pub const PINNED: &str = "pinned";
     pub const FILES: &str = "files";
     pub const LINKS: &str = "links";
+    pub const RUNS: &str = "runs";
     pub const CHANGES: &str = "changes";
 
     pub fn project(id: &str) -> String {
@@ -230,6 +336,8 @@ pub struct HighlightSections {
     pub files: Vec<Highlight>,
     /// Links and pull requests.
     pub links: Vec<Highlight>,
+    /// GitHub Actions runs, newest first (experiment ciRuns).
+    pub runs: Vec<CiRun>,
     pub commits: Vec<Highlight>,
     /// Edited files not already listed as a pin or a file.
     pub edited: Vec<String>,
@@ -260,6 +368,7 @@ impl HighlightSections {
                 }
             }
         }
+        out.runs = highlights.runs.clone();
         let listed: HashSet<&str> = out.pinned.iter().chain(&out.files).filter_map(|h| h.path.as_deref()).collect();
         let mut seen: HashSet<&str> = HashSet::new();
         out.edited = highlights.edited.iter().filter(|p| !listed.contains(p.as_str()) && seen.insert(p.as_str())).cloned().collect();
@@ -267,7 +376,7 @@ impl HighlightSections {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.brief.is_none() && self.pinned.is_empty() && self.files.is_empty() && self.links.is_empty() && self.commits.is_empty() && self.edited.is_empty()
+        self.brief.is_none() && self.pinned.is_empty() && self.files.is_empty() && self.links.is_empty() && self.runs.is_empty() && self.commits.is_empty() && self.edited.is_empty()
     }
 
     /// The first `limit` of a group (they come newest first) and how many more
@@ -1172,18 +1281,50 @@ pub struct PanelItem {
     pub path: Option<String>,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub icon: Option<String>,
-    /// "attention", "failed" or "done"; anything else is plain.
+    /// "attention", "failed", "done", "ready" or "blocked"; anything else is plain.
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub tone: Option<String>,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub section: Option<String>,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub trailing: Option<String>,
+    /// Rows folded under this one, opened by a link at the end of the detail
+    /// line. One level: theirs are ignored (`folded`).
+    #[serde(default, deserialize_with = "crate::wire::field")]
+    pub more: Option<Box<PanelMore>>,
+}
+
+/// A list row's folded rows (`PanelItem.More`).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct PanelMore {
+    #[serde(default, deserialize_with = "crate::wire::field")]
+    pub label: String,
+    #[serde(default, deserialize_with = "crate::wire::list")]
+    pub items: Vec<PanelItem>,
 }
 
 impl PanelItem {
+    /// The link and the rows under it, when there are any: one with no label
+    /// or no rows is drawn as if it had none.
+    pub fn more(&self) -> Option<&PanelMore> {
+        self.more.as_deref().filter(|m| !m.label.trim().is_empty() && !m.items.is_empty())
+    }
+
+    /// The rows under it as they're drawn: their own `more` and `section`
+    /// ignored, at most 50 (docs/protocol.md).
+    pub fn folded(&self) -> Vec<PanelItem> {
+        self.more().map(|m| m.items.iter().take(50).map(|i| PanelItem { more: None, section: None, ..i.clone() }).collect()).unwrap_or_default()
+    }
+
+    /// Its identity across refreshes, for keeping its folded rows open: its
+    /// section and link or file, else its title (`ListPanelKey`).
+    pub fn key(&self) -> String {
+        format!("{}\u{0}{}", self.section.as_deref().unwrap_or(""), self.url.as_deref().or(self.path.as_deref()).unwrap_or(&self.title))
+    }
+
     pub fn tone_kind(&self) -> Option<&str> {
-        self.tone.as_deref().filter(|t| matches!(*t, "attention" | "failed" | "done"))
+        self.tone.as_deref().filter(|t| matches!(*t, "attention" | "failed" | "done" | "ready" | "blocked"))
     }
 
     /// The row's own icon, else one for its tone, else none (`ListPanel.icon`).
@@ -1195,6 +1336,8 @@ impl PanelItem {
             Some("attention") => Some("exclamationmark.circle"),
             Some("failed") => Some("xmark.circle"),
             Some("done") => Some("checkmark"),
+            Some("ready") => Some("checkmark.circle"),
+            Some("blocked") => Some("clock"),
             _ => None,
         }
     }
@@ -1321,6 +1464,28 @@ pub mod patches {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn runs_decode_tolerantly_and_show_between_links_and_changes() {
+        use super::*;
+        let decoded = ThreadHighlights::decode(&serde_json::json!({"highlights": [], "edited": [], "runs": [
+            {"id": "run:2", "workflow": "CI", "status": "failed", "url": "https://github.com/o/r/actions/runs/2", "sha": "a1b2c3d", "branch": "feat", "event": "push", "at": "2026-11-12T10:00:00Z"},
+            {"id": "run:1", "workflow": "Lint", "status": "warping", "url": "https://github.com/o/r/actions/runs/1", "sha": "a1b2c3d", "new": 1},
+            {"id": "run:0", "workflow": "No url"}
+        ]}));
+        assert_eq!(decoded.runs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["run:2", "run:1"], "the one without a url is skipped");
+        assert_eq!(decoded.runs[0].word(), "Failed");
+        assert_eq!(decoded.runs[1].word(), "", "a status from a newer runner has no word");
+        let sections = HighlightSections::build(&decoded);
+        assert_eq!(sections.runs.len(), 2);
+        assert!(!sections.is_empty());
+        let now = parse_ms("2026-11-12T10:04:30Z").unwrap();
+        assert_eq!(decoded.runs[0].detail(now), "feat · a1b2c3d · 4m ago");
+        assert_eq!(decoded.runs[1].detail(now), "a1b2c3d");
+        assert_eq!(decoded.runs[0].tip(), "Failed. Click to open the run on GitHub.");
+        assert_eq!(run_ago(now, now), "just now");
+        assert_eq!(run_ago(now - 86_400_000, now), "1 day ago");
+    }
+
     #[test]
     fn chips_sit_on_a_shelf_for_each_place_they_came_from_grouped_by_patch() {
         let patch = |id: &str, extra: serde_json::Value| {
@@ -1553,23 +1718,48 @@ mod tests {
     }
 
     #[test]
+    fn a_list_row_folds_rows_under_its_link() {
+        let render = PanelRender::decode(&json!({"items": [
+            {"title": "Production", "url": "https://example.com", "section": "Elsewhere", "more": {"label": "Also in 2 other threads", "items": [
+                {"title": "Fix the footer links", "section": "Ignored", "more": {"label": "Deeper", "items": [{"title": "x"}]}},
+                {"title": "Ship the pricing page"}
+            ]}},
+            {"title": "Empty", "more": {"label": "Nothing", "items": []}},
+            {"title": "Odd", "more": "not an object"}
+        ]}));
+        let items = render.items.expect("items");
+        assert_eq!(items.len(), 3, "a broken `more` doesn't lose the row");
+        assert_eq!(items[0].more().map(|m| m.label.as_str()), Some("Also in 2 other threads"));
+        let folded = items[0].folded();
+        assert_eq!(folded.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), ["Fix the footer links", "Ship the pricing page"]);
+        assert!(folded[0].more.is_none() && folded[0].section.is_none(), "one level only, and no headings inside");
+        assert!(items[1].more().is_none(), "no rows, no link");
+        assert!(items[2].more().is_none());
+        assert_ne!(items[0].key(), items[1].key());
+    }
+
+    #[test]
     fn panel_render_decodes_items_skipping_broken_ones() {
         let render = PanelRender::decode(&json!({"items": [
             {"title": "main", "detail": "/w/site abc1234 [main]", "icon": "arrow.triangle.branch"},
             {"title": "Preview", "url": "http://localhost:4321", "tone": "attention"},
             {"title": "Build", "tone": "failed", "path": "/w/site/build.log"},
             {"title": "Deploy", "tone": "done"},
+            {"title": "Merge", "tone": "ready"},
+            {"title": "Review", "tone": "blocked"},
             {"title": "Odd", "tone": "sparkly"},
             {"detail": "no title"}
         ], "note": null}));
         let items = render.items.expect("items");
-        assert_eq!(items.len(), 6, "a row with no title has one that's empty");
+        assert_eq!(items.len(), 8, "a row with no title has one that's empty");
         assert_eq!(items[0].symbol(), Some("arrow.triangle.branch"));
         assert_eq!(items[1].symbol(), Some("exclamationmark.circle"));
         assert_eq!(items[2].symbol(), Some("xmark.circle"));
         assert_eq!(items[3].symbol(), Some("checkmark"));
-        assert_eq!(items[4].symbol(), None, "a tone this app doesn't know is plain");
-        assert_eq!(items[4].tone_kind(), None);
+        assert_eq!(items[4].symbol(), Some("checkmark.circle"), "ready is green, good to go");
+        assert_eq!(items[5].symbol(), Some("clock"), "blocked is yellow, waiting on someone else");
+        assert_eq!(items[6].symbol(), None, "a tone this app doesn't know is plain");
+        assert_eq!(items[6].tone_kind(), None);
         assert!(render.note.is_none());
     }
 

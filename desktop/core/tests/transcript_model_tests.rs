@@ -661,3 +661,15 @@ fn testAFailedCatchUpIsNotAStall() {
     assert_eq!(feed.catch_up(vec![text(2, "m0", "y"), text(3, "m1", "x")]), FeedAction::ScheduleFlush);
     assert_eq!(feed.accepted_seq(), 3);
 }
+
+/// A job waiting its turn on a lock (protocol "Queued jobs") says so on the
+/// transcript's line, first, and who it waits behind (`BackgroundWork.line`).
+#[test]
+fn testQueuedJobsSayWhatTheyWaitBehind() {
+    let tasks = vec![BackgroundTask::new(BackgroundKind::Agent, "a", false), BackgroundTask::new(BackgroundKind::Shell, "tb land", false)];
+    let marked = BackgroundTask::marking(tasks.clone(), &["another landing of this repo".to_owned()]);
+    assert_eq!(marked[0].queued_behind, None, "only shell jobs");
+    assert_eq!(BackgroundWork::line(&marked[1..]), "1 job queued behind another landing of this repo");
+    assert_eq!(BackgroundWork::line(&marked), "1 job queued behind another landing of this repo, 1 sub-agent working");
+    assert_eq!(BackgroundTask::marking(tasks.clone(), &[]), tasks);
+}

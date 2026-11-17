@@ -171,6 +171,17 @@ Feature: The Updates panel
     When I type "sleep 30" and press Return in the Terminal
     Then a restart onto it waits for the Terminal
 
+  # Background priority runs only on efficiency cores: on an M1 Pro (two)
+  # the release build took over an hour, holding the build lock every
+  # thread's builds wait on (12 Nov). core's build_command tests the choice;
+  # a scripted app never builds its own update.
+  @manual @system.selfupdate
+  Scenario: The next version builds on every core of a Mac with few efficiency cores
+    Given this Mac has fewer than 4 efficiency cores
+    When the app builds its next version
+    Then the build runs on every core, giving way to the rest at nice 10
+    And on a Mac with 4 or more efficiency cores it runs at background priority
+
   @system.selfupdate @swift-pending
   Scenario: Back from restarting onto the next version, the list and the thread are as they were
     When the app comes back from restarting onto its next version on the Scheduled list with "Morning brief" open

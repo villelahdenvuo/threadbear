@@ -314,6 +314,9 @@ actions!(
         HibernateTomorrow,
         HibernateMonday,
         HibernateRestart,
+        UseSharedLayout,
+        UseOwnLayout,
+        MakeLayoutDefault,
         QuitApp,
         HideApp,
         HideOtherApps,
@@ -402,6 +405,9 @@ commands!(
     (HibernateTomorrow, HibernateTomorrow, None),
     (HibernateMonday, HibernateMonday, None),
     (HibernateRestart, HibernateRestart, None),
+    (LayoutShared, UseSharedLayout, None),
+    (LayoutOwn, UseOwnLayout, None),
+    (LayoutMakeDefault, MakeLayoutDefault, None),
     (Quit, QuitApp, None),
     (Hide, HideApp, None),
     (HideOthers, HideOtherApps, None),
@@ -609,7 +615,8 @@ impl Threadbear {
     /// a divider drag changes it every frame.
     pub(crate) fn dock_layout_changed(&mut self, layout: DockLayout, cx: &mut Context<Self>) {
         crate::activity::panels(crate::activity::showing(&layout));
-        self.settings.saved.dock_layout = serde_json::to_value(&layout).ok();
+        // To the shared layout or the project's own (panel_layouts.rs).
+        crate::panel_layouts::save(&mut self.settings.saved, self.layout_owner.as_deref(), &layout);
         self.save_settings_soon(cx);
         // Threads' own panels and the main panel's tabs (thread_panels.rs).
         self.thread_panels_layout_changed(&layout, cx);
@@ -763,6 +770,9 @@ impl Threadbear {
             Command::TogglePanels => self.toggle_panels(cx),
             Command::ToggleTerminal => crate::terminal::toggle(self, window, cx),
             Command::ResetPanelLayout => self.reset_panel_layout(cx),
+            Command::LayoutShared => self.set_layout_pick(crate::panel_layouts::Mode::Shared, cx),
+            Command::LayoutOwn => self.set_layout_pick(crate::panel_layouts::Mode::PerProject, cx),
+            Command::LayoutMakeDefault => self.make_layout_default(cx),
             Command::CollapseThreads => self.toggle_threads_collapsed(cx),
             Command::ToggleFrameRate => self.toggle_frame_rate(window, cx),
             Command::About => self.show_about(window, cx),
@@ -1270,6 +1280,7 @@ impl Threadbear {
                     item(if threads_showing { "Collapse Threads" } else { "Expand Threads" }, Command::CollapseThreads),
                     item(if panels_shown { "Hide Panels" } else { "Show Panels" }, Command::TogglePanels),
                     item(if terminal_shown { "Hide Terminal" } else { "Show Terminal" }, Command::ToggleTerminal),
+                    Submenu { title: "Panel Layout".into(), items: self.panel_layout_menu() },
                     item("Reset Panel Layout", Command::ResetPanelLayout),
                 ]
                 .into_iter()
@@ -1666,7 +1677,8 @@ impl TopMenu {
 }
 
 pub(crate) enum MenuEntry {
-    Item { title: String, command: Command, enabled: bool },
+    /// `checked` ticks it, as a menu that picks one thing does.
+    Item { title: String, command: Command, enabled: bool, checked: bool },
     Submenu { title: String, items: Vec<MenuEntry> },
     /// An Edit menu item: the text box's own action (window_menu.rs).
     Edit(crate::window_menu::EditItem),
@@ -1677,7 +1689,7 @@ pub(crate) enum MenuEntry {
 
 impl MenuEntry {
     fn item(title: &str, command: Command) -> Self {
-        MenuEntry::Item { title: title.to_string(), command, enabled: true }
+        MenuEntry::Item { title: title.to_string(), command, enabled: true, checked: false }
     }
 
     fn enabled(mut self, on: bool) -> Self {
@@ -1693,11 +1705,14 @@ fn menus_json(menus: &[TopMenu], shortcuts: &ShortcutBindings) -> Value {
         items
             .iter()
             .filter_map(|e| match e {
-                MenuEntry::Item { title, command, enabled } => {
+                MenuEntry::Item { title, command, enabled, checked } => {
                     let key = command.shortcut().and_then(|c| shortcuts.key(c)).map(|k| k.display()).or_else(|| standard_key_display(*command).map(str::to_owned));
                     let mut out = serde_json::json!({ "title": title, "enabled": enabled });
                     if let Some(key) = key {
                         out["key"] = Value::String(key);
+                    }
+                    if *checked {
+                        out["checked"] = Value::Bool(true);
                     }
                     Some(out)
                 }
@@ -1722,7 +1737,7 @@ fn gpui_menus(menus: &[TopMenu]) -> Vec<Menu> {
         items
             .iter()
             .map(|e| match e {
-                MenuEntry::Item { title, command, enabled } => MenuItem::Action { name: title.clone().into(), action: command.action(), os_action: None, checked: false, disabled: !enabled },
+                MenuEntry::Item { title, command, enabled, checked } => MenuItem::Action { name: title.clone().into(), action: command.action(), os_action: None, checked: *checked, disabled: !enabled },
                 MenuEntry::Submenu { title, items } => MenuItem::submenu(Menu::new(title.clone()).items(entries(items))),
                 MenuEntry::Edit(item) => MenuItem::Action { name: item.title().into(), action: item.action(), os_action: item.os_action(), checked: false, disabled: false },
                 MenuEntry::Services => MenuItem::os_submenu("Services", SystemMenuType::Services),

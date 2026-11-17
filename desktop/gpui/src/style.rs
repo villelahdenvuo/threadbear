@@ -625,6 +625,17 @@ pub fn needs_you_text(cx: &App) -> Hsla {
     pick(cx, srgb(1., 0.62, 0.04, 1.), srgb(0.7, 0.33, 0., 1.))
 }
 
+/// `Theme.ready`: a list row that's good to go (systemGreen in dark).
+pub fn ready_text(cx: &App) -> Hsla {
+    pick(cx, srgb(0.19, 0.82, 0.35, 1.), srgb(0.10, 0.50, 0.20, 1.))
+}
+
+/// `Theme.blocked`: a list row waiting on someone or something else
+/// (systemYellow in dark).
+pub fn blocked_text(cx: &App) -> Hsla {
+    pick(cx, srgb(1., 0.84, 0.04, 1.), srgb(0.62, 0.48, 0., 1.))
+}
+
 /// `Theme.errorBackground`: behind a failed turn's message.
 pub fn error_background(cx: &App) -> Hsla {
     pick(cx, srgb(0.7, 0.2, 0.2, 0.18), srgb(1., 0.94, 0.94, 1.))

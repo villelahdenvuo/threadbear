@@ -114,6 +114,7 @@ mod spinner;
 mod style;
 mod swift_import;
 mod milestones;
+mod panel_layouts;
 mod swipe_nav;
 mod terminal;
 mod terminal_element;

@@ -754,6 +754,9 @@ pointer and shows where it will go when you let go:
 
 Escape, or letting go anywhere else, puts it back where it was. Drag the
 line between two panels to resize them, and click × on a tab to close it.
+When a group's tabs don't fit in its bar, they scroll sideways with a
+trackpad or a mouse wheel. A chevron after them lists every tab, with a
+tick on the one showing.
 Right-click a title for Hide Title, which leaves the panel without a bar
 while it's on its own; a thin strip along its top still lets you drag it.
 

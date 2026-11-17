@@ -390,19 +390,34 @@ impl BackgroundWork {
             let what = count_words(finished, kind);
             return format!("{what} just finished, about to read {}", if finished == 1 { "its result" } else { "their results" });
         }
-        let parts: Vec<String> = [BackgroundKind::Agent, BackgroundKind::Shell, BackgroundKind::Monitor, BackgroundKind::Other]
-            .iter()
-            .filter_map(|kind| {
-                let n = running.iter().filter(|t| t.kind == *kind).count();
-                if n == 0 {
-                    None
-                } else {
-                    Some(count_words(n, *kind))
-                }
-            })
-            .collect();
-        let verb = if parts.len() == 1 && running[0].kind == BackgroundKind::Agent { "working" } else { "running" };
-        let mut line = format!("{} {verb} in the background", join(&parts));
+        // Jobs waiting their turn on a lock say so (protocol "Queued jobs"),
+        // first, as that's why nothing seems to happen.
+        let (queued, going): (Vec<&BackgroundTask>, Vec<&BackgroundTask>) = running.iter().partition(|t| t.queued_behind.is_some());
+        let mut lines: Vec<String> = vec![];
+        if !queued.is_empty() {
+            let behind: HashSet<&str> = queued.iter().filter_map(|t| t.queued_behind.as_deref()).filter(|b| !b.is_empty()).collect();
+            let mut text = format!("{} queued", count_words(queued.len(), BackgroundKind::Shell));
+            if behind.len() == 1 {
+                text.push_str(&format!(" behind {}", behind.iter().next().unwrap_or(&"")));
+            }
+            lines.push(text);
+        }
+        if !going.is_empty() {
+            let parts: Vec<String> = [BackgroundKind::Agent, BackgroundKind::Shell, BackgroundKind::Monitor, BackgroundKind::Other]
+                .iter()
+                .filter_map(|kind| {
+                    let n = going.iter().filter(|t| t.kind == *kind).count();
+                    if n == 0 {
+                        None
+                    } else {
+                        Some(count_words(n, *kind))
+                    }
+                })
+                .collect();
+            let verb = if parts.len() == 1 && going[0].kind == BackgroundKind::Agent { "working" } else { "running" };
+            lines.push(if queued.is_empty() { format!("{} {verb} in the background", join(&parts)) } else { format!("{} {verb}", join(&parts)) });
+        }
+        let mut line = lines.join(", ");
         if finished > 0 {
             line.push_str(&format!(", {finished} just finished"));
         }

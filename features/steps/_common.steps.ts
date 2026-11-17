@@ -85,3 +85,22 @@ When("the runner says Threadbear Runner.app is behind main", async function (thi
 When('the runner says it is updating Threadbear Runner by itself', async function (this: ThreadbearWorld) {
   await this.app.do({ cmd: 'mock', method: 'updates', params: { state: 'idle', launcherChanged: true, reinstall: { state: 'waiting', auto: true } } });
 });
+
+// A thread's background work, as the runner's summary says it
+// (mock.background), and a job among it waiting its turn on a lock
+// (protocol "Queued jobs").
+When('{string} runs {string} in the background', async function (this: ThreadbearWorld, title: string, what: string) {
+  await this.app.do({ cmd: 'mock', method: 'background', params: { title, background: [{ kind: 'shell', description: what }] } });
+});
+
+When('{string} runs {string} in the background, queued behind {string}', async function (this: ThreadbearWorld, title: string, what: string, behind: string) {
+  await this.app.do({ cmd: 'mock', method: 'background', params: { title, background: [{ kind: 'shell', description: what }], queued: [{ id: 'job-1', what, behind }] } });
+});
+
+When('{string} in {string} gets its turn', async function (this: ThreadbearWorld, what: string, title: string) {
+  await this.app.do({ cmd: 'mock', method: 'background', params: { title, background: [{ kind: 'shell', description: what }] } });
+});
+
+When('{string} has nothing left in the background', async function (this: ThreadbearWorld, title: string) {
+  await this.app.do({ cmd: 'mock', method: 'background', params: { title } });
+});

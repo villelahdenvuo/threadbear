@@ -501,7 +501,7 @@ impl Threadbear {
             return;
         }
         let Some(script) = script() else { return };
-        let (program, arguments) = rules::build_command(&script.to_string_lossy(), &checkout, &next_dir().to_string_lossy());
+        let (program, arguments) = rules::build_command(&script.to_string_lossy(), &checkout, &next_dir().to_string_lossy(), efficiency_cores());
         let log = open_log();
         let (out, err) = match log.as_ref().and_then(|l| Some((l.try_clone().ok()?, l.try_clone().ok()?))) {
             Some((a, b)) => (Stdio::from(a), Stdio::from(b)),
@@ -882,4 +882,11 @@ impl Threadbear {
         self.menus_stale = true;
         cx.notify();
     }
+}
+
+/// This Mac's efficiency cores (`AppUpdater.efficiencyCoreCount`), read from
+/// sysctl; 0 when it has one kind of core or the answer can't be read.
+fn efficiency_cores() -> usize {
+    let read = |key: &str| Command::new("/usr/sbin/sysctl").args(["-n", key]).stderr(Stdio::null()).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+    rules::efficiency_cores(read("hw.nperflevels").as_deref(), read("hw.perflevel1.physicalcpu").as_deref())
 }

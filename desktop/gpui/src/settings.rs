@@ -115,6 +115,14 @@ pub struct Saved {
     /// 13 Nov). A panel with its title hidden moves from its background
     /// either way. The GPUI app's own.
     pub panel_background_drag: Option<bool>,
+    /// `panelLayoutMode`: "shared" (None) or "perProject", the default for
+    /// every project (panel_layouts.rs).
+    pub panel_layout_mode: Option<String>,
+    /// `projectPanelLayouts`: each project's own layout, by project id, the
+    /// same shape as `dockLayout`.
+    pub project_panel_layouts: Option<std::collections::BTreeMap<String, Value>>,
+    /// `projectPanelLayoutModes`: a project's own pick, by project id.
+    pub project_panel_layout_modes: Option<std::collections::BTreeMap<String, String>>,
 }
 
 /// The settings file: where it is and what's in it. Reading is at launch only;

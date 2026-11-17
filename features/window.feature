@@ -78,9 +78,23 @@ Feature: The window and its panels
     And the app is quit and opened again
     Then the Inbox is sorted oldest first
 
+  # Tabs past the bar's edge were clipped and couldn't be clicked (Ville, 11
+  # Nov). The strip scrolls (a trackpad, or a plain mouse wheel, as GPUI turns
+  # a wheel sideways in a strip that only scrolls sideways) and keeps the
+  # selected tab in view; the menu is a popup no scripted step reads yet.
+  @manual @dock.bars
+  Scenario: Tabs that don't fit scroll, with a menu of every tab
+    Given a side pane group with more tabs than fit in its bar
+    Then a chevron after the tabs says "All 5 tabs"
+    When I click the chevron
+    Then a menu lists every tab, with the selected one ticked
+    When I choose a tab from it
+    Then that tab is selected and scrolled into view
+    And with room for every tab the chevron goes
+
   # Settings › General › Panel layout picks the default for every project;
   # View › Panel Layout picks it for the project in front (PanelLayouts).
-  @dock.projectlayouts @gpui-pending
+  @dock.projectlayouts
   Scenario: A project with its own layout keeps its panels when I go to another project
     Given I open the thread "Rename the Settings tabs"
     When I choose "Own Layout for Threadbear" from the menu bar
@@ -91,7 +105,7 @@ Feature: The window and its panels
     When I open the thread "Rename the Settings tabs"
     Then the panels include "terminal"
 
-  @dock.projectlayouts @gpui-pending
+  @dock.projectlayouts
   Scenario: A project can go back to the shared layout
     Given I open the thread "Rename the Settings tabs"
     When I choose "Own Layout for Threadbear" from the menu bar

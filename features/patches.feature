@@ -37,7 +37,15 @@ Feature: What a folder's patches give a thread
     And the list panel has the heading "Elsewhere" with the rows "Local | Production"
     And the list row "Pricing" says "12m" and "Waiting on the plan prices"
 
-  @panel.list @gpui-pending
+  # The frozen Swift app colours these rows but its dump doesn't say so.
+  @panel.list @swift-pending
+  Scenario: A list row can be ready to go or blocked on someone else
+    When I open the thread "Rebuild the three landing pages"
+    And I show the "deploys.previews" section of the pane
+    Then the list row "Production" is marked "ready"
+    And the list row "Local" is marked "blocked"
+
+  @panel.list
   Scenario: A list row's link opens and closes the rows folded under it
     When I open the thread "Rebuild the three landing pages"
     And I show the "deploys.previews" section of the pane

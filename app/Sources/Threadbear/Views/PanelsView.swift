@@ -1449,7 +1449,8 @@ private struct ListPanel: View {
                        detail: item.detail, indent: indent, reservesIcon: reservesIcon, detailTruncation: .tail,
                        detailLines: 2, more: item.more?.label, moreOpen: open.contains(key),
                        toggleMore: { toggle(key) },
-                       action: openRow)
+                       // A row with no link or file but with folded rows opens them, like its link.
+                       action: openRow ?? (item.more != nil ? { toggle(key) } : nil))
             .iconContextMenu {
                 if let path = item.path {
                     FileMenu(path: path, thread: thread, title: item.title)

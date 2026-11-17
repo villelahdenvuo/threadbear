@@ -381,8 +381,30 @@ pub fn restart_wait(m: &RestartMoment, why_held: impl FnOnce() -> String) -> Opt
 /// -b`, as Mike asks of every build on his M5): throttled CPU and disk, off
 /// the cores he's using, inherited by everything it starts, the copy to a
 /// build host and back included.
-pub fn build_command(script: &str, checkout: &str, next: &str) -> (String, Vec<String>) {
-    ("/usr/sbin/taskpolicy".into(), ["-b", "/bin/bash", script, checkout, "--next", next].map(String::from).to_vec())
+///
+/// Not on a Mac with few efficiency cores, though: background work runs only
+/// on those, and on Ville's M1 Pro (two) the release build took over an hour,
+/// holding the build lock every thread's builds and tests wait on (12 Nov).
+/// There it's `nice`: every core, giving way to the rest.
+pub fn build_command(script: &str, checkout: &str, next: &str, efficiency_cores: usize) -> (String, Vec<String>) {
+    let script_args = ["/bin/bash", script, checkout, "--next", next].map(String::from);
+    if efficiency_cores < MIN_EFFICIENCY_CORES_FOR_BACKGROUND {
+        return ("/usr/bin/nice".into(), ["-n", "10"].map(String::from).into_iter().chain(script_args).collect());
+    }
+    ("/usr/sbin/taskpolicy".into(), std::iter::once("-b".to_owned()).chain(script_args).collect())
+}
+
+/// Fewer efficiency cores than this and background priority starves the build.
+pub const MIN_EFFICIENCY_CORES_FOR_BACKGROUND: usize = 4;
+
+/// `sysctl -n hw.nperflevels` and `hw.perflevel1.physicalcpu`'s answers as
+/// the efficiency cores: 0 on a Mac with one kind of core (or none read).
+pub fn efficiency_cores(perf_levels: Option<&str>, level1_cores: Option<&str>) -> usize {
+    let levels: usize = perf_levels.and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+    if levels < 2 {
+        return 0;
+    }
+    level1_cores.and_then(|s| s.trim().parse().ok()).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -462,9 +484,29 @@ mod tests {
 
     #[test]
     fn the_build_runs_at_background_priority() {
-        let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next");
+        let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next", 6);
         assert_eq!(program, "/usr/sbin/taskpolicy");
         assert_eq!(args, ["-b", "/bin/bash", "/b/stage-update.sh", "/repo", "--next", "/next"]);
+    }
+
+    // With two efficiency cores (an M1 Pro), background priority took the
+    // release build past an hour, holding the build lock (12 Nov): nice there.
+    #[test]
+    fn few_efficiency_cores_get_nice_instead() {
+        for cores in [0, 2] {
+            let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next", cores);
+            assert_eq!(program, "/usr/bin/nice");
+            assert_eq!(args, ["-n", "10", "/bin/bash", "/b/stage-update.sh", "/repo", "--next", "/next"]);
+        }
+    }
+
+    #[test]
+    fn counts_efficiency_cores_from_sysctl() {
+        assert_eq!(efficiency_cores(Some("2\n"), Some("2\n")), 2, "an M1 Pro");
+        assert_eq!(efficiency_cores(Some("2"), Some("6")), 6);
+        assert_eq!(efficiency_cores(Some("1"), Some("8")), 0, "one kind of core");
+        assert_eq!(efficiency_cores(None, None), 0);
+        assert_eq!(efficiency_cores(Some("2"), Some("odd")), 0);
     }
 
     #[test]

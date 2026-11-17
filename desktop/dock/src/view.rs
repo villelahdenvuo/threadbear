@@ -10,8 +10,9 @@ use crate::platform;
 use crate::theme::{DockTheme, GAP};
 use crate::windows::FloatingWindows;
 use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
-use gpui_kit::component::{h_flex, tooltip::Tooltip, v_flex};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
+use gpui_kit::component::{h_flex, tooltip::Tooltip, v_flex, Sizable as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::cell::{Cell, RefCell};
@@ -812,6 +813,12 @@ impl DockView {
                 strip = strip.child(div().flex_none().child(self.tab(panel, *panel == group.selected, false, theme, window, cx)));
             }
             bar = bar.child(strip);
+            // When they don't all fit, a menu at the end lists every tab, so a
+            // mouse can reach any of them (Ville, 11 Nov 2026). The strip's
+            // room is the last frame's, as it scrolls once it overflows.
+            if handle.max_offset().x > px(0.) {
+                bar = bar.child(self.all_tabs_menu(&group, cx));
+            }
         }
         // The empty part of a bar: moves its panel (or the window, HoldDrag).
         let press_panel = selected.clone();
@@ -962,6 +969,28 @@ impl DockView {
 
     /// Right-click on a title, a tab, the strip of a panel without a title,
     /// or a panel's background (PanelMenu).
+    /// The chevron after a group's tabs that don't fit (`TabStrip`'s
+    /// overflow menu): every tab, the selected one ticked, a click selects.
+    fn all_tabs_menu(&self, group: &DockGroup, cx: &mut Context<Self>) -> AnyElement {
+        let titles: Vec<(PanelId, SharedString)> = group.panels.iter().map(|p| (p.clone(), self.content.title(p, cx))).collect();
+        let (selected, model) = (group.selected.clone(), self.model.clone());
+        Button::new(ElementId::Name(format!("dock-all-tabs-{}", group.id).into()))
+            .icon(Icon::new(Lucide::ChevronDown))
+            .ghost()
+            .xsmall()
+            .flex_none()
+            .mx(px(4.))
+            .tooltip(format!("All {} tabs", titles.len()))
+            .dropdown_menu(move |mut menu: PopupMenu, _, _| {
+                for (panel, title) in &titles {
+                    let (model, panel) = (model.clone(), panel.clone());
+                    menu = menu.item(PopupMenuItem::new(title.clone()).checked(panel == selected).on_click(move |_, _, cx| model.update(cx, |m, cx| m.select(&panel, cx))));
+                }
+                menu
+            })
+            .into_any_element()
+    }
+
     pub(crate) fn panel_menu(&self, panel: PanelId, tabbed: bool) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
         let model = self.model.clone();
         let content = self.content.clone();

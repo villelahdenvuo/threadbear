@@ -116,6 +116,10 @@ pub struct ThreadSummary {
     /// Kept as it came: the reducer reads its own `BackgroundTask` from these.
     #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub background: Option<Vec<Value>>,
+    /// Jobs waiting for their turn on a lock (protocol "Queued jobs"). The
+    /// background shell jobs are marked from these (`queued_behind`).
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
+    pub queued: Option<Vec<Value>>,
     #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub subagents: Option<Vec<Value>>,
     /// The runner's loose-ends check for the done card (protocol "Loose
@@ -294,7 +298,23 @@ impl ThreadSummary {
     }
     /// The background list, read leniently: a malformed entry is left out.
     pub fn background_tasks(&self) -> Vec<BackgroundTask> {
-        self.background.iter().flatten().filter_map(|v| crate::wire::read(v.clone())).collect()
+        let mut tasks: Vec<BackgroundTask> = self.background.iter().flatten().filter_map(|v| crate::wire::read(v.clone())).collect();
+        let marks = mark_queued(tasks.iter().map(|t| (t.kind == "shell", t.finished)), &self.queued_behind());
+        for (task, behind) in tasks.iter_mut().zip(marks) {
+            task.queued_behind = behind;
+        }
+        tasks
+    }
+
+    /// What each of the jobs waiting their turn waits for, oldest first, ""
+    /// for one that didn't say (protocol "Queued jobs").
+    pub fn queued_behind(&self) -> Vec<String> {
+        self.queued
+            .iter()
+            .flatten()
+            .filter(|q| q.get("id").and_then(Value::as_str).is_some_and(|id| !id.is_empty()))
+            .map(|q| q.get("behind").and_then(Value::as_str).unwrap_or("").to_owned())
+            .collect()
     }
     /// What's still open on the done card, as the reducer takes it
     /// (Swift `ThreadSummary.looseEnds`, which decodes it leniently too).
@@ -415,6 +435,30 @@ pub struct BackgroundTask {
     pub description: String,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub finished: bool,
+    /// Set when it's waiting for its turn on a lock: what it waits for, or ""
+    /// when it didn't say. From the summary's `queued`, never sent.
+    #[serde(skip)]
+    pub queued_behind: Option<String>,
+}
+
+/// Which background tasks the queued jobs are (`BackgroundWork.marking`),
+/// given each task's (is a shell job, finished): the CLI doesn't say which
+/// job is which, so it's the newest shell jobs still running, as a job
+/// queues as it starts. A queued job run in the foreground marks none.
+pub fn mark_queued(tasks: impl Iterator<Item = (bool, bool)>, behind: &[String]) -> Vec<Option<String>> {
+    let tasks: Vec<(bool, bool)> = tasks.collect();
+    let mut out = vec![None; tasks.len()];
+    let mut left = behind.to_vec();
+    for i in (0..tasks.len()).rev() {
+        if left.is_empty() {
+            break;
+        }
+        let (shell, finished) = tasks[i];
+        if shell && !finished {
+            out[i] = left.pop();
+        }
+    }
+    out
 }
 
 /// How the Inbox section is ordered, from the sort menu on its heading

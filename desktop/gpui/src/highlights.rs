@@ -117,6 +117,7 @@ fn restored_preview(open: &crate::pane_store::Open, from: &str) -> PanePreview {
 pub(crate) struct RowFlags {
     pub edited_open: bool,
     pub all_links: bool,
+    pub all_runs: bool,
     pub all_commits: bool,
     pub all_subagents: bool,
     pub all_started: bool,
@@ -1069,6 +1070,17 @@ pub(crate) struct PaneRow {
     pub on_menu: Option<Rc<dyn Fn(&mut SidePane, Point<Pixels>, &mut Window, &mut Context<SidePane>)>>,
     /// A file on this Mac it drags out as (file_drag.rs).
     pub drag: Option<String>,
+    /// A link with a chevron at the end of the detail line that opens and
+    /// closes rows folded under this one (a list panel row's `more`).
+    pub more: Option<MoreLink>,
+}
+
+/// `PaneRow.more`: the link's words, whether its rows are open, and what a
+/// click on it does.
+pub(crate) struct MoreLink {
+    pub label: String,
+    pub open: bool,
+    pub toggle: Rc<dyn Fn(&mut SidePane, &mut Context<SidePane>)>,
 }
 
 impl PaneRow {
@@ -1091,7 +1103,13 @@ impl PaneRow {
             on_click: None,
             on_menu: None,
             drag: None,
+            more: None,
         }
+    }
+
+    pub(crate) fn more(mut self, more: Option<MoreLink>) -> Self {
+        self.more = more;
+        self
     }
 
     pub(crate) fn icon(mut self, symbol: impl Into<String>) -> Self {
@@ -1176,7 +1194,7 @@ impl PaneRow {
         self
     }
 
-    pub(crate) fn render(self, p: Palette, cx: &mut Context<SidePane>) -> impl IntoElement + use<> {
+    pub(crate) fn render(mut self, p: Palette, cx: &mut Context<SidePane>) -> impl IntoElement + use<> {
         let hover = p.hover;
         let label_color = if self.quiet { p.secondary } else { p.fg };
         let title_row = h_flex()
@@ -1194,6 +1212,35 @@ impl PaneRow {
             .gap(px(2.))
             .child(title_row)
             .when_some(self.note.filter(|n| !n.is_empty()), |s, note| s.child(div().text_size(px(style::size::DETAIL)).line_height(px(style::natural_line(style::size::DETAIL))).text_color(p.secondary).line_clamp(4).overflow_hidden().text_ellipsis().child(note)))
+            .when_some(self.more.take(), |s, more| {
+                // The link and its chevron are one piece, after the detail,
+                // which gives way to it.
+                let tip = format!("{} the rows under {}", if more.open { "Hide" } else { "Show" }, self.title);
+                let toggle = more.toggle.clone();
+                let link = tipped(
+                    h_flex()
+                        .id(SharedString::from(format!("pane-more-{}", self.title)))
+                        .flex_none()
+                        .items_center()
+                        .gap(px(3.))
+                        .cursor_pointer()
+                        .text_color(p.accent)
+                        .child(more.label.clone())
+                        .child(icon(if more.open { "chevron.down" } else { "chevron.right" }, 8., p.accent)),
+                    tip,
+                )
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    cx.stop_propagation();
+                    (toggle)(this, cx);
+                }));
+                let line = h_flex().items_center().min_w_0().text_size(px(style::size::SMALL)).line_height(px(style::natural_line(style::size::SMALL))).text_color(p.faint);
+                let line = match self.detail.take().filter(|d| !d.is_empty()) {
+                    Some(detail) => line.child(div().min_w_0().truncate().child(format!("{detail} · "))),
+                    None => line,
+                };
+                s.child(line.child(link))
+            })
             .when_some(self.detail.filter(|d| !d.is_empty()), |s, detail| {
                 let mut d = div().text_size(px(style::size::SMALL)).line_height(px(style::natural_line(style::size::SMALL))).text_color(p.faint);
                 d = if self.detail_lines > 1 { d.line_clamp(self.detail_lines).overflow_hidden().text_ellipsis() } else { d.truncate() };
@@ -1343,6 +1390,29 @@ impl SidePane {
         // A file of this Mac's drags out as itself (`fileDrag`).
         pr = pr.drag(item.path.clone().filter(|_| !thread.is_remote()));
         pr.render(p, cx).into_any_element()
+    }
+
+    /// A run (`runRow`): its status as the icon, green when it passed and red
+    /// when it failed, the workflow, then branch, commit and when. Opens the
+    /// run on GitHub.
+    fn run_row(&mut self, run: &core::CiRun, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let color = match run.status.as_str() {
+            "passed" => Some(style::added_text(cx)),
+            "failed" => Some(p.failed),
+            _ => None,
+        };
+        let word = run.word();
+        let (url, url2) = (run.url.clone(), run.url.clone());
+        PaneRow::new(SharedString::from(format!("hl-row-runs-{}", run.id)), run.workflow.clone())
+            .icon(run.symbol())
+            .tinted(color)
+            .trailing((!word.is_empty()).then(|| word.to_owned()))
+            .detail(Some(run.detail(now_ms())).filter(|d| !d.is_empty()))
+            .tip(run.tip())
+            .on_click(move |this, _window, cx| this.follow_link(&url, cx))
+            .on_menu(move |this, pos, window, cx| this.open_link_row_menu(&url2, pos, window, cx))
+            .render(p, cx)
+            .into_any_element()
     }
 
     fn render_highlights(&mut self, thread: &ThreadSummary, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -1531,6 +1601,21 @@ impl SidePane {
                 }
             }
         }
+        // GitHub Actions runs its pushes set off (experiment ciRuns), between
+        // the links and the commits behind them (Ville picked this, 12 Nov).
+        if !sections.runs.is_empty() {
+            let folded = self.is_folded(fold::RUNS);
+            list = list.child(self.heading(Heading { key: fold::RUNS.to_owned(), title: "Runs".into(), icon: Some(icon("play.circle", 11., p.secondary).into_any_element()), count: Some(sections.runs.len()), folded, foldable: true, accessory: None }, p, cx));
+            if !folded {
+                let (shown, more) = HighlightSections::capped(&sections.runs, core::RUN_LIMIT, flags.all_runs);
+                for run in shown {
+                    list = list.child(self.run_row(run, p, cx));
+                }
+                if more > 0 {
+                    list = list.child(self.show_all_row("runs", sections.runs.len(), thread.id.clone(), p, cx));
+                }
+            }
+        }
         if !sections.commits.is_empty() || !sections.edited.is_empty() {
             let folded = self.is_folded(fold::CHANGES);
             let count = sections.commits.len() + sections.edited.len();
@@ -1601,6 +1686,7 @@ impl SidePane {
                 let flags = this.flags.entry(thread_id.clone()).or_default();
                 match which {
                     "links" => flags.all_links = true,
+                    "runs" => flags.all_runs = true,
                     "commits" => flags.all_commits = true,
                     "subagents" => flags.all_subagents = true,
                     _ => flags.all_started = true,
@@ -1881,7 +1967,7 @@ impl SidePane {
         if s.brief.is_some() {
             parts.push("a brief".into());
         }
-        for (name, n) in [("pinned", s.pinned.len()), ("files", s.files.len()), ("links", s.links.len()), ("commits", s.commits.len()), ("edited", s.edited.len())] {
+        for (name, n) in [("pinned", s.pinned.len()), ("files", s.files.len()), ("links", s.links.len()), ("runs", s.runs.len()), ("commits", s.commits.len()), ("edited", s.edited.len())] {
             if n > 0 {
                 parts.push(format!("{n} {name}"));
             }
@@ -2028,6 +2114,18 @@ impl SidePane {
             }
             add(fold::LINKS, "Links", sections.links.len(), rows, &mut out);
         }
+        if !sections.runs.is_empty() {
+            let (shown, more) = HighlightSections::capped(&sections.runs, core::RUN_LIMIT, flags.all_runs);
+            let now = now_ms();
+            let mut rows: Vec<Value> = shown
+                .iter()
+                .map(|r| json!({ "title": r.workflow, "trailing": Some(r.word()).filter(|w| !w.is_empty()), "detail": Some(r.detail(now)).filter(|d| !d.is_empty()), "symbol": r.symbol() }))
+                .collect();
+            if more > 0 {
+                rows.push(json!({ "title": format!("Show all {}", sections.runs.len()), "symbol": "ellipsis" }));
+            }
+            add(fold::RUNS, "Runs", sections.runs.len(), rows, &mut out);
+        }
         if !sections.commits.is_empty() || !sections.edited.is_empty() {
             let (shown, more) = HighlightSections::capped(&sections.commits, core::COMMIT_LIMIT, flags.all_commits);
             let mut rows: Vec<Value> = shown.iter().map(&item_row).collect();
@@ -2119,6 +2217,7 @@ fn highlight_command(side: &Entity<SidePane>, thread: &ThreadSummary, cmd: &Valu
             let flags = pane.flags.entry(thread.id.clone()).or_default();
             match which {
                 "links" => flags.all_links = true,
+                "runs" => flags.all_runs = true,
                 "commits" => flags.all_commits = true,
                 "subagents" => flags.all_subagents = true,
                 "started" => flags.all_started = true,

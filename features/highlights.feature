@@ -114,10 +114,10 @@ Feature: Highlights, what a thread has made and shared
     And I choose "Remove" from the menu of the highlight "copy-review.md"
     Then Highlights doesn't list "copy-review.md"
 
-  @highlights.runs @gpui-pending
+  @highlights.runs
   Scenario: GitHub Actions runs its pushes set off sit between Links and Changes, with their status
     When I open the thread "Ship the beta to TestFlight"
-    Then Highlights has the headings "Links | Runs | Changes"
+    Then Highlights has the headings "Needs you | Links | Runs | Changes"
     And the "Runs" highlight "TestFlight upload" says "Running"
     And the "Runs" highlight "Lint" says "Queued"
     And the "Runs" highlight "CI" says "Failed"

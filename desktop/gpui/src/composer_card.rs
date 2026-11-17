@@ -409,6 +409,13 @@ impl Composer {
     fn render_done_card(&mut self, card: &AsksCard, drawing: Option<Instant>, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let mut column = v_flex().w_full();
         let this = cx.entity().downgrade();
+        // Background work still going (a land, a build, sub-agents): not done
+        // yet, whatever the agent said, so no Done and no Archive until it's
+        // over (Ville, 12 Nov). What's running is the transcript's last line.
+        if card.still_running() {
+            let mark = crate::icons::symbol("hourglass").with_size(px(15.)).text_color(style::secondary_text(cx)).into_any_element();
+            column = column.child(h_flex().w_full().h(px(metrics::PAGED_HEADING)).child(card_title(mark, 3., "Still running", cx)));
+        }
         // Arriving, its tick draws itself on; then it's the tick as ever.
         let green = style::tick_green(cx);
         let tick = match drawing.filter(|at| at.elapsed() < threadbear_core::juice::TICK_DRAW_END) {
@@ -418,7 +425,7 @@ impl Composer {
             }
             None => crate::icons::tall_checkmark().with_size(px(16.)).text_color(green).into_any_element(),
         };
-        column = column.child(
+        column = column.when(!card.still_running(), |column| column.child(
             h_flex()
                 .w_full()
                 .h(px(metrics::PAGED_HEADING))
@@ -432,7 +439,7 @@ impl Composer {
                         }
                     }
                 })),
-        );
+        ));
         // What's still open (doneText): a booked check-in alone goes under
         // "Coming back", as it doesn't stop an archive.
         if let Some(ends) = &card.loose_ends {
@@ -1252,7 +1259,7 @@ impl Composer {
             self.pane.upgrade()?.read(cx).ask_link_words(&link.title, &target)
         });
         if card.is_done() {
-            lines.push("Done".to_owned());
+            lines.push(if card.still_running() { "Still running" } else { "Done" }.to_owned());
             for (i, next) in card.next.iter().enumerate() {
                 let tick = if self.card.next_picks.contains(&(i as i64)) { "[x]" } else { "[ ]" };
                 lines.push(format!("{tick} {next}{}", if self.card.explain.contains(&(i as i64)) { " (?)" } else { "" }));

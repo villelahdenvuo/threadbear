@@ -376,6 +376,10 @@ pub fn background_short(tasks: &[BackgroundTask]) -> String {
     if running.is_empty() {
         return "Finishing".into();
     }
+    // All of it waiting its turn: not running yet.
+    if running.iter().all(|t| t.queued_behind.is_some()) {
+        return "Queued".into();
+    }
     let first_kind = kind_of(running[0]);
     if running.iter().all(|t| kind_of(t) == first_kind) {
         count(running.len(), first_kind)
@@ -390,7 +394,12 @@ pub fn background_detail(tasks: &[BackgroundTask]) -> String {
         .iter()
         .map(|t| {
             let name = if t.description.is_empty() { count(1, kind_of(t)) } else { t.description.clone() };
-            if t.finished { format!("{name} (finished)") } else { name }
+            match (&t.queued_behind, t.finished) {
+                (_, true) => format!("{name} (finished)"),
+                (Some(behind), _) if behind.is_empty() => format!("{name} (queued)"),
+                (Some(behind), _) => format!("{name} (queued behind {behind})"),
+                (None, _) => name,
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -613,7 +622,8 @@ pub fn busy_prompt(t: &ThreadSummary, archive: bool) -> (String, String) {
     let verb = if archive { "Archive" } else { "Hibernate" };
     let doing = if archive { "Archiving" } else { "Hibernating" };
     if !t.busy() {
-        let what = background_short(&t.background_tasks()).to_lowercase();
+        let short = background_short(&t.background_tasks());
+        let what = if short == "Queued" { "a job queued".to_owned() } else { short.to_lowercase() };
         return (format!("{verb} and stop the background work?"), format!("This thread still has {what} in the background. {doing} it now stops them."));
     }
     let state = if t.status == "waiting" { "is waiting for you" } else { "is still working" };
@@ -1044,11 +1054,29 @@ mod tests {
 
     #[test]
     fn background_words() {
-        let tasks = |list: &[(&str, bool)]| list.iter().map(|(kind, finished)| BackgroundTask { kind: kind.to_string(), description: String::new(), finished: *finished }).collect::<Vec<_>>();
+        let tasks = |list: &[(&str, bool)]| list.iter().map(|(kind, finished)| BackgroundTask { kind: kind.to_string(), description: String::new(), finished: *finished, queued_behind: None }).collect::<Vec<_>>();
         assert_eq!(background_short(&tasks(&[("agent", false), ("agent", false), ("agent", false)])), "3 sub-agents");
         assert_eq!(background_short(&tasks(&[("shell", false)])), "1 job");
         assert_eq!(background_short(&tasks(&[("agent", false), ("shell", false)])), "2 jobs");
         assert_eq!(background_short(&tasks(&[("agent", true)])), "Finishing");
+    }
+
+    /// A job waiting its turn on a lock (protocol "Queued jobs") says Queued,
+    /// not running: Ville saw "1 job running" while tb land waited behind
+    /// another landing (12 Nov).
+    #[test]
+    fn queued_jobs_say_queued() {
+        let t = thread(json!({ "status": "idle", "background": [{ "kind": "agent", "description": "a" }, { "kind": "shell", "description": "tb land" }],
+            "queued": [{ "id": "land-1", "what": "tb land", "behind": "another landing of this repo", "since": "2026-11-12T00:00:00Z" }, { "bad": 1 }] }));
+        let tasks = t.background_tasks();
+        assert_eq!(tasks[0].queued_behind, None, "only shell jobs");
+        assert_eq!(tasks[1].queued_behind.as_deref(), Some("another landing of this repo"));
+        assert_eq!(background_short(&tasks[1..]), "Queued");
+        assert_eq!(background_short(&tasks), "2 jobs", "not all of it is waiting");
+        assert_eq!(background_detail(&tasks[1..]), "tb land (queued behind another landing of this repo)");
+        let only = thread(json!({ "status": "idle", "background": [{ "kind": "shell", "description": "tb land" }], "queued": [{ "id": "land-1" }] }));
+        assert_eq!(busy_prompt(&only, true).1, "This thread still has a job queued in the background. Archiving it now stops them.");
+        assert_eq!(background_detail(&only.background_tasks()), "tb land (queued)");
     }
 
     #[test]

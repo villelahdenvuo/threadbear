@@ -68,6 +68,15 @@ Feature: What a thread's row says in the sidebar
   Scenario: Background work says what's still running
     Then the row "Rebuild the three landing pages" says "3 sub-agents" on the right
 
+  # Ville saw "1 job running" while tb land waited behind another landing
+  # (12 Nov): the job says it's queued (protocol "Queued jobs").
+  @sidebar.row.status
+  Scenario: A job waiting its turn on a lock says Queued
+    When "Rename the Settings tabs" runs "tb land" in the background, queued behind "another landing of this repo"
+    Then the row "Rename the Settings tabs" says "Queued" on the right
+    When "tb land" in "Rename the Settings tabs" gets its turn
+    Then the row "Rename the Settings tabs" says "1 job" on the right
+
   @sidebar.row.status
   Scenario: A failed turn says Failed
     Then the row "Make a poster for the meetup" says "Failed" on the right

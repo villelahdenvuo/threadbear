@@ -154,11 +154,24 @@ pub struct BackgroundTask {
     /// The CLI's own words: the sub-agent's brief, the command. May be empty.
     pub description: String,
     pub finished: bool,
+    /// Set when it's waiting for its turn on a lock: what it waits for, or ""
+    /// when it didn't say (protocol "Queued jobs"; `marking`).
+    pub queued_behind: Option<String>,
 }
 
 impl BackgroundTask {
     pub fn new(kind: BackgroundKind, description: &str, finished: bool) -> BackgroundTask {
-        BackgroundTask { kind, description: description.to_owned(), finished }
+        BackgroundTask { kind, description: description.to_owned(), finished, queued_behind: None }
+    }
+
+    /// The list with its shell jobs marked from the summary's `queued`
+    /// (`BackgroundWork.marking`; `inbox::mark_queued` says which).
+    pub fn marking(mut tasks: Vec<BackgroundTask>, behind: &[String]) -> Vec<BackgroundTask> {
+        let marks = crate::inbox::mark_queued(tasks.iter().map(|t| (t.kind == BackgroundKind::Shell, t.finished)), behind);
+        for (task, mark) in tasks.iter_mut().zip(marks) {
+            task.queued_behind = mark;
+        }
+        tasks
     }
 
     /// `BackgroundTask.init(from:)`: lenient about a kind it doesn't know,
@@ -181,7 +194,7 @@ impl BackgroundTask {
             Some(Value::Bool(b)) => *b,
             Some(_) => return None,
         };
-        Some(BackgroundTask { kind, description, finished })
+        Some(BackgroundTask { kind, description, finished, queued_behind: None })
     }
 }
 

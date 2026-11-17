@@ -548,7 +548,7 @@ impl ThreadPane {
     }
 
     fn background_tasks(&self) -> Vec<BackgroundTask> {
-        self.summary.background.iter().flatten().filter_map(BackgroundTask::decode).collect()
+        BackgroundTask::marking(self.summary.background.iter().flatten().filter_map(BackgroundTask::decode).collect(), &self.summary.queued_behind())
     }
 
     pub fn load(&mut self, cx: &mut Context<Self>) {

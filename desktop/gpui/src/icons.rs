@@ -80,7 +80,7 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "star.fill" => return Some(Icon::default().data(STAR_FILLED)),
         "bubble.left.fill" => return Some(Icon::default().data(BUBBLE_FILLED)),
         "star.slash" => IconName::StarOff,
-        "tray" => IconName::Inbox,
+        "tray" | "tray.full" => IconName::Inbox,
         "tray.and.arrow.up" => IconName::ArchiveRestore,
         "bolt" => IconName::Zap,
         "moon" | "moon.zzz" => IconName::Moon,
@@ -116,7 +116,7 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "wrench.and.screwdriver" => IconName::Wrench,
         "hammer" => IconName::Hammer,
         "number" => IconName::Hash,
-        "pencil" => IconName::Pencil,
+        "pencil" | "pencil.circle" => IconName::Pencil,
         "rectangle.split.2x1" => IconName::Columns2,
         "square.stack" => IconName::Layers,
         // The project menu's Make Its Own Project and Merge into, and a task
@@ -164,7 +164,7 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "airplane" => IconName::Plane,
         "cup.and.saucer" => IconName::Coffee,
         // The window shell's (WindowDock, ActivityBar, DetailView).
-        "bubble.left.and.bubble.right" => IconName::MessagesSquare,
+        "bubble.left.and.bubble.right" | "bubble.left.and.text.bubble.right" => IconName::MessagesSquare,
         "square.stack.3d.up" => IconName::Layers,
         "gearshape" => IconName::Settings,
         "gauge.with.dots.needle.33percent" | "gauge.with.dots.needle.100percent" => IconName::Gauge,
@@ -198,14 +198,14 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "folder.fill" => IconName::Folder,
         "wrench.and.screwdriver.fill" => IconName::Wrench,
         "person.crop.circle.badge.exclamationmark" => IconName::UserRoundX,
-        "checkmark.circle.fill" => IconName::CircleCheck,
+        "checkmark.circle.fill" | "checkmark.circle" => IconName::CircleCheck,
         // Finish setting up's item still to do.
         "circle" => IconName::Circle,
         "arrow.up.right" => IconName::ArrowUpRight,
         "arrow.up.left.and.arrow.down.right" => IconName::Maximize2,
         "key" => IconName::Key,
         "arrow.triangle.2.circlepath" => IconName::RefreshCw,
-        "arrow.right.circle" => IconName::CircleArrowRight,
+        "arrow.right.circle" | "arrow.uturn.right.circle" => IconName::CircleArrowRight,
         "minus.circle" => IconName::CircleMinus,
         "plus.square.on.square" => IconName::CopyPlus,
         // The pane beside the thread: Highlights, previews, Patches, folders.
@@ -244,7 +244,7 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "paperplane" => IconName::Send,
         // The Scheduled list's row buttons and menu, and the editor's Repeat menu.
         "pause" => IconName::Pause,
-        "play" | "playpause" => IconName::Play,
+        "play" | "playpause" | "play.circle" => IconName::Play,
         "calendar.badge.clock" => IconName::CalendarClock,
         "slider.horizontal.3" => IconName::SlidersHorizontal,
         "folder.badge.plus" => IconName::FolderPlus,
@@ -256,7 +256,7 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "clock.arrow.circlepath" => IconName::RotateCcwClock,
         // A reply's links' menus (reply_links.rs), the selection bar and the
         // Explain pane (selection_bar.rs, explain_pane.rs).
-        "wand.and.stars" => IconName::WandSparkles,
+        "wand.and.stars" | "wand.and.rays" => IconName::WandSparkles,
         "questionmark.folder" => IconName::FileQuestionMark,
         // Lucide has no magnifier with a sparkle in it: the plain one is nearest.
         "sparkle.magnifyingglass" => IconName::Search,

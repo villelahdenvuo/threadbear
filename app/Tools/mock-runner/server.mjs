@@ -1740,6 +1740,19 @@ async function dispatch(client, method, p) {
     // for its last turn.completed (or `seq`); no `ends` takes it away.
     // `quiet` leaves it unsent, as a check that finished while the app was
     // away is: the app hears of it only from threads.list on reconnecting.
+    // A thread's background work and the jobs among it waiting their turn
+    // on a lock, by title (protocol "Queued jobs"): `background` as the
+    // summary's, `queued` as `{ id, what?, behind? }[]`; none takes them away.
+    case 'mock.background': {
+      const entry = [...threads.values()].find((t) => t.summary.title === p.title);
+      if (!entry) throw rpcError(-32602, `No thread called "${p.title}"`);
+      if (Array.isArray(p.background) && p.background.length) entry.summary.background = p.background;
+      else delete entry.summary.background;
+      if (Array.isArray(p.queued) && p.queued.length) entry.summary.queued = p.queued.map((q) => ({ since: iso(), ...q }));
+      else delete entry.summary.queued;
+      broadcastSummary(entry.summary.id);
+      return { thread: entry.summary };
+    }
     case 'mock.looseEnds': {
       const entry = [...threads.values()].find((t) => t.summary.title === p.title);
       if (!entry) throw rpcError(-32602, `No thread called "${p.title}"`);

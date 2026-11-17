@@ -57,6 +57,16 @@ Feature: The open card in the composer
     Then the card in the composer says "Done"
     And the card offers the follow-up "Turn on the lint rule that sorts imports"
 
+  # The agent's "nothing needed" came while a land it started in the
+  # background was still going (Ville, 12 Nov): no Done or Archive till then.
+  @card.done
+  Scenario: A done card says Still running while background work goes on
+    When I open the thread "Tidy the imports in the uploader"
+    And "Tidy the imports in the uploader" runs "tb land" in the background
+    Then the card in the composer says "Still running"
+    When "Tidy the imports in the uploader" has nothing left in the background
+    Then the card in the composer says "Done"
+
   @card.done @card.answers
   Scenario: Ticked follow-ups go when I send
     When I open the thread "Tidy the imports in the uploader"

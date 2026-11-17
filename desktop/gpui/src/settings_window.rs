@@ -521,7 +521,7 @@ impl SettingsWindow {
 
     fn render_general(&mut self, settings: Option<&RunnerSettings>, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         // This Mac's own, so they're here while the runner's away too.
-        let mut sections = vec![self.appearance_section(cx), self.panels_section(cx), self.quitting_section(cx), self.notifications_section(cx)];
+        let mut sections = vec![self.appearance_section(cx), self.panels_section(cx), self.panel_layout_section(cx), self.quitting_section(cx), self.notifications_section(cx)];
         // The web runtime is this Mac's too (web_runtime.rs), last, so it
         // moves nothing the Swift app's General has.
         let web_runtime = section("settings-web-runtime", "Web runtime", crate::web_runtime::SETTINGS_ABOUT, "check whether it's installed and working, or why a diagram or panel isn't showing.", vec![row("Web runtime", crate::web_runtime::settings_control(cx), cx)], cx);
@@ -687,6 +687,34 @@ impl SettingsWindow {
             "To move a panel, drag its title or tab. With this on, pressing and holding anywhere on a panel picks it up too. A panel with its title hidden can always be moved that way, as it has nothing else to drag it by.",
             "change it for you.",
             vec![row("Move panels by their background", switch, cx)],
+            cx,
+        )
+    }
+
+    /// One panel layout for everything, or one per project (panel_layouts.rs).
+    fn panel_layout_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::panel_layouts::{self as layouts, Mode};
+        let current = self.app.upgrade().map_or(Mode::Shared, |a| layouts::default_mode(&a.read(cx).settings.saved));
+        let app = self.app.clone();
+        let tip = "One panel layout for everything, or one for each project";
+        let menu = Button::new("settings-panel-layout").label(current.title()).small().secondary().dropdown_caret(true).tooltip(tip).dropdown_menu(move |menu: PopupMenu, _, _| {
+            let mut menu = menu;
+            for choice in Mode::ALL {
+                let app = app.clone();
+                menu = menu.item(PopupMenuItem::new(choice.title()).checked(choice == current).on_click(move |_, _, cx| {
+                    if let Some(app) = app.upgrade() {
+                        app.update(cx, |app, cx| app.set_layout_default(choice, cx));
+                    }
+                }));
+            }
+            menu
+        });
+        section(
+            "settings-panel-layout-section",
+            "Panel layout",
+            "Where you put the panels beside the thread. Shared: one layout for everything. Each project has its own: every project remembers where you put its panels, and they slide into place when you open one of its threads. A project starts from the shared layout. Threads in no project use the shared layout. To choose for one project, open one of its threads and use View > Panel Layout.",
+            "change it for you.",
+            vec![row("Panel layout", div().id("settings-panel-layout-holder").test_support().a11y_role(Role::GenericContainer).aria_label(tip).child(menu), cx)],
             cx,
         )
     }

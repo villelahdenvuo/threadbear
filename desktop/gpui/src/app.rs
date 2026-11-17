@@ -91,6 +91,12 @@ pub struct Threadbear {
     /// fast as the screen refreshes, and this was a noticeable part of each
     /// frame (set by an observer of the app itself, in `new`).
     pub(crate) menus_stale: bool,
+    /// The project whose own panel layout the dock shows and saves to; None
+    /// for the shared one (panel_layouts.rs).
+    pub(crate) layout_owner: Option<String>,
+    /// The project View › Panel Layout was last drawn for, so the menu bar
+    /// is made again when another one comes in front.
+    pub(crate) layout_menu_project: Option<String>,
     /// The login each thread was on when it went into error
     /// (`failedOnAccount`), so the limit line blames that login only while
     /// the thread's still on it, not the one it's just been switched to.
@@ -502,6 +508,8 @@ impl Threadbear {
             shortcuts_path: None,
             menu_signature: String::new(),
             menus_stale: true,
+            layout_owner: None,
+            layout_menu_project: None,
             failed_on_account: HashMap::new(),
             limit_pick: HashMap::new(),
             inbox_count_cache: Default::default(),
@@ -1827,6 +1835,8 @@ pub(crate) fn project_list(projects: &Value) -> Vec<(String, String, bool)> {
 
 impl Render for Threadbear {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Another project's thread or page in front: its panel layout.
+        self.follow_layout_context(cx);
         if std::mem::take(&mut self.menus_stale) {
             // The openAnything experiment turned on or off: ⌘K and ⌘P with it.
             if self.open_anything_on() != self.bound_open_anything {

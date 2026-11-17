@@ -35,8 +35,12 @@ pub(crate) struct PanelsState {
     pub trusting: HashSet<String>,
     /// Actions running now, by "<thread>/<action>" (`runningActions`).
     pub running: HashSet<String>,
+    /// Each list panel's rows with their folded rows open, by
+    /// "<thread>/<panel>" and then `PanelItem::key`.
+    pub open: HashMap<String, HashSet<String>>,
 }
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 fn panel_key(thread_id: &str, panel_id: &str) -> String {
@@ -196,7 +200,7 @@ impl SidePane {
                     crate::files::pane_note("Loading…", p).into_any_element()
                 }
                 Some(render) => match render.items.clone().filter(|i| !i.is_empty()) {
-                    Some(items) => self.render_list_panel(thread, items, p, cx),
+                    Some(items) => self.render_list_panel(thread, &key, items, p, cx),
                     None => {
                         let note = render.note.clone().unwrap_or_else(|| "Nothing in this list.".to_owned());
                         crate::files::pane_note(&note, p).into_any_element()
@@ -253,7 +257,7 @@ impl SidePane {
             .into_any_element()
     }
 
-    fn render_list_panel(&mut self, thread: &ThreadSummary, items: Vec<PanelItem>, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+    fn render_list_panel(&mut self, thread: &ThreadSummary, key: &str, items: Vec<PanelItem>, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let reserves = items.iter().any(|i| i.symbol().is_some());
         let headings = PanelItem::headings(&items);
         let mut list = v_flex().py(px(8.));
@@ -261,27 +265,61 @@ impl SidePane {
             if let Some(heading) = headings[index].clone() {
                 list = list.child(self.heading(crate::highlights::Heading { key: format!("panel-{index}"), title: heading, icon: None, count: None, folded: false, foldable: false, accessory: None }, p, cx));
             }
-            list = list.child(self.list_row(item, index, reserves, thread, p, cx));
+            // A row's folded rows, opened by the link on its detail line, go
+            // indented under it (`ListPanel`, PanelItem.more).
+            let more = item.more().map(|m| {
+                let (panel, row) = (key.to_owned(), item.key());
+                let open = self.panels.open.get(key).is_some_and(|o| o.contains(&row));
+                crate::highlights::MoreLink {
+                    label: m.label.clone(),
+                    open,
+                    toggle: Rc::new(move |this: &mut SidePane, cx: &mut Context<SidePane>| {
+                        let set = this.panels.open.entry(panel.clone()).or_default();
+                        if !set.remove(&row) {
+                            set.insert(row.clone());
+                        }
+                        cx.notify();
+                    }),
+                }
+            });
+            let open = more.as_ref().is_some_and(|m| m.open);
+            list = list.child(self.list_row(item, format!("panel-row-{index}"), reserves, false, more, thread, p, cx));
+            if open {
+                for (n, child) in item.folded().iter().enumerate() {
+                    list = list.child(self.list_row(child, format!("panel-row-{index}-{n}"), true, true, None, thread, p, cx));
+                }
+            }
         }
         div().id("list-panel").size_full().overflow_y_scroll().child(list).into_any_element()
     }
 
-    /// A row with a link or a file opens it the way a highlight does.
-    fn list_row(&mut self, item: &PanelItem, index: usize, reserves: bool, thread: &ThreadSummary, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+    /// A row with a link or a file opens it the way a highlight does. A row
+    /// with neither but with folded rows opens and closes them, like its link.
+    #[allow(clippy::too_many_arguments)]
+    fn list_row(&mut self, item: &PanelItem, id: String, reserves: bool, indent: bool, more: Option<crate::highlights::MoreLink>, thread: &ThreadSummary, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let color = match item.tone_kind() {
             Some("attention") => Some(p.needs_you),
             Some("failed") => Some(p.failed),
+            // Green for good to go, yellow for waiting on someone else, only
+            // when a patch asks for it (ListPanel.colour).
+            Some("ready") => Some(style::ready_text(cx)),
+            Some("blocked") => Some(style::blocked_text(cx)),
             _ => None,
         };
+        let toggle = more.as_ref().map(|m| m.toggle.clone());
         // A patch's detail is usually a sentence, so it gets two lines and keeps its start.
-        let mut row = PaneRow::new(SharedString::from(format!("panel-row-{index}")), item.title.clone())
+        let mut row = PaneRow::new(SharedString::from(id), item.title.clone())
             .icon_opt(item.symbol())
+            .more(more)
             .tinted(color)
             .reserves_icon(reserves)
             .trailing(item.trailing.clone())
             .trailing_symbol(if item.tone_kind() == Some("done") && item.icon.is_some() { Some("checkmark") } else { None })
             .detail(item.detail.clone())
             .detail_lines(2);
+        if indent {
+            row = row.indent();
+        }
         let (path, url, title) = (item.path.clone(), item.url.clone(), item.title.clone());
         let thread2 = thread.clone();
         if path.is_some() || url.is_some() {
@@ -307,6 +345,8 @@ impl SidePane {
                     this.open_menu(items, pos, window, cx);
                 }
             });
+        } else if let Some(toggle) = toggle {
+            row = row.on_click(move |this, _, cx| toggle(this, cx));
         }
         row.render(p, cx).into_any_element()
     }
@@ -720,8 +760,20 @@ impl SidePane {
                                 sections.push(json!({ "key": heading, "title": heading, "count": 0, "folded": false, "rows": [] }));
                             }
                             let last = sections.last_mut().expect("a section");
-                            let row = json!({ "title": item.title, "trailing": item.trailing, "detail": item.detail, "symbol": item.icon.clone().filter(|i| !i.is_empty()).or_else(|| item.tone_kind().map(str::to_owned)) });
-                            last["rows"].as_array_mut().expect("rows").push(row);
+                            let symbol = |i: &PanelItem| i.icon.clone().filter(|i| !i.is_empty()).or_else(|| i.tone_kind().map(str::to_owned));
+                            let is_open = item.more().is_some() && self.panels.open.get(&key).is_some_and(|o| o.contains(&item.key()));
+                            let mut row = json!({ "title": item.title, "trailing": item.trailing, "detail": item.detail, "symbol": symbol(item), "tone": item.tone_kind() });
+                            if let Some(more) = item.more() {
+                                row["more"] = json!(more.label);
+                                row["moreOpen"] = json!(is_open);
+                            }
+                            let rows = last["rows"].as_array_mut().expect("rows");
+                            rows.push(row);
+                            if is_open {
+                                for child in item.folded() {
+                                    rows.push(json!({ "title": child.title, "trailing": child.trailing, "detail": child.detail, "symbol": symbol(&child), "tone": child.tone_kind(), "folded": true }));
+                                }
+                            }
                             last["count"] = json!(last["count"].as_i64().unwrap_or(0) + 1);
                         }
                         pane.insert("list".into(), Value::Array(sections));

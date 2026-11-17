@@ -337,3 +337,24 @@ fn a_reviewed_turns_ledger_is_a_row_over_the_reply() {
     let ids = ids(&carried);
     assert_eq!(ids.iter().position(|i| i == "lr:t2").map(|p| p + 1), ids.iter().position(|i| i == "a:m2"), "{ids:?}");
 }
+
+/// The thread's background work rides on its done cards, the one that
+/// arrives while it runs included, and goes when it's over: the card says
+/// Still running, with no Archive, meanwhile (Ville, 12 Nov).
+#[test]
+fn testDoneCardsCarryTheBackgroundWork() {
+    let job = vec![BackgroundTask::new(BackgroundKind::Shell, "tb land", false)];
+    let mut model = TranscriptModel::new(None);
+    model.load(vec![needs_nothing(1, "t1", json!([]))], &[]);
+    assert!(card(&model, "ak:1").unwrap().running.is_empty());
+    assert!(!card(&model, "ak:1").unwrap().still_running());
+    let _ = model.set_background(job.clone());
+    assert_eq!(card(&model, "ak:1").unwrap().running, job);
+    assert!(card(&model, "ak:1").unwrap().still_running());
+    let _ = model.set_background(vec![]);
+    assert!(!card(&model, "ak:1").unwrap().still_running(), "Done again once it's over");
+    let mut later = TranscriptModel::new(None);
+    let _ = later.set_background(job.clone());
+    later.load(vec![needs_nothing(1, "t1", json!([]))], &[]);
+    assert_eq!(card(&later, "ak:1").unwrap().running, job);
+}
