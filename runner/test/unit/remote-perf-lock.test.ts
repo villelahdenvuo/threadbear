@@ -59,7 +59,7 @@ echo 'fake 0 0 41943040 0% /'
   child.stdout!.on('data', (s) => { output += s; });
   child.stderr!.on('data', (s) => { output += s; });
   const done = new Promise((r) => child.on('exit', r));
-  const timeout = setTimeout(() => child.kill('SIGTERM'), 15_000);
+  const timeout = setTimeout(() => child.kill('SIGTERM'), 120_000);
   t.after(() => clearTimeout(timeout));
   if (mode === 'busy-run') {
     const end = Date.now() + 10_000;

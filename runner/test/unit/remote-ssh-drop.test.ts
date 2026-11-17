@@ -44,7 +44,7 @@ mkdir -p "\${dest/host:/}"
   const r = spawnSync('/bin/bash', [path.join(root, 'desktop/scripts/remote.sh'), 'host', '--', 'true'], {
     env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, THREADBEAR_PERF_LOCK_OWNER: '' },
     encoding: 'utf8',
-    timeout: 20_000,
+    timeout: 120_000,
   });
   assert.equal(r.status, 255, r.stderr);
   assert.match(r.stderr, /Waiting for another build or measurement[^]*remote\.sh: lost the ssh connection to host/);

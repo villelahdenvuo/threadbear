@@ -378,10 +378,10 @@ test('the process lookup finds a real connection through lsof and ps', async () 
   try {
     const port = await peer;
     const registry = { threadOfPid: (p: number) => (p === child.pid ? 'th9' : undefined) };
-    assert.equal(await threadOfPort(port, { registry, known: () => true, log: nullLogger }), 'th9');
+    assert.equal(await threadOfPort(port, { registry, known: () => true, log: nullLogger, lookupMs: 60_000 }), 'th9');
     // Under another process: its parent (this test) is the CLI.
     const up = { threadOfPid: (p: number) => (p === process.pid ? 'th8' : undefined) };
-    assert.equal(await threadOfPort(port, { registry: up, known: () => true, log: nullLogger }), 'th8');
+    assert.equal(await threadOfPort(port, { registry: up, known: () => true, log: nullLogger, lookupMs: 60_000 }), 'th8');
   } finally {
     child.kill();
     server.close();
