@@ -32,6 +32,7 @@ export type Highlight = {
   pushed?: true;
   pushedAt?: string; // commit: when that push was
   repo?: string; // commit: owner/name, from the push's "To" line, on GitHub
+  dir?: string; // commit: the folder the push ran in, when not the thread's
   seq: number;
   lastSeq: number;
   at: string;
@@ -155,6 +156,7 @@ export function observe(state: HighlightState, events: Iterable<PersistedEvent>,
         if (gitRuns(call.command, 'push') && e.ok) {
           const branches = new Set([...pushedBranches(text), ...pushArgBranches(call.command)]);
           const repo = pushedRepo(text);
+          const dir = pushDir(call.command, ctx.cwd, home);
           for (const item of state.items) {
             if (item.kind !== 'commit' || item.pushed) continue;
             // A push whose branch can't be told (`git push -q`) sends what
@@ -163,6 +165,7 @@ export function observe(state: HighlightState, events: Iterable<PersistedEvent>,
               item.pushed = true;
               item.pushedAt = e.ts;
               if (repo) item.repo = repo;
+              if (dir && dir !== ctx.cwd) item.dir = dir;
               item.lastSeq = e.seq;
               changed = true;
             }
@@ -205,7 +208,8 @@ export function upsert(state: HighlightState, h: Highlight): boolean {
 export function view(state: HighlightState, brief?: { text: string; at: string }): ThreadHighlights {
   const pins = state.items.filter((h) => h.how === 'pinned').sort((a, b) => b.seq - a.seq);
   const rest = state.items.filter((h) => h.how !== 'pinned').sort((a, b) => b.lastSeq - a.lastSeq);
-  const out: ThreadHighlights = { highlights: [...pins, ...rest].map(({ ...h }) => h), edited: [...state.edited] };
+  // `dir` is the runner's own, for ci-runs.ts.
+  const out: ThreadHighlights = { highlights: [...pins, ...rest].map(({ dir: _dir, ...h }) => h), edited: [...state.edited] };
   if (brief) out.brief = brief;
   return out;
 }
@@ -454,6 +458,26 @@ export function pushedBranches(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/^[^\S\n\r\u2028\u2029]*(?:[+*][^\S\n\r\u2028\u2029]*)?(?:[0-9a-f]{7,40}\.{2,3}[0-9a-f]{7,40}|\[new branch\])\s+(\S+)\s+->\s+\S+/gm)) out.add(m[1]!);
   return [...out];
+}
+
+// The folder a command's first `git push` ran in, when the command says:
+// `git -C dir push`, or a `cd dir` before it. Undefined when it doesn't, or
+// names it with a variable.
+export function pushDir(command: string, cwd: string, home?: string): string | undefined {
+  let dir: string | undefined;
+  for (const segment of command.split(/&&|\|\||;|\||\n|\(|\)/)) {
+    const words = shellWords(segment.trim());
+    if (words[0] === 'cd' && words.length === 2 && !/[$`]/.test(words[1]) && words[1] !== '-') dir = absolute(words[1], dir ?? cwd, home);
+    if (words[0] !== 'git') continue;
+    let i = 1;
+    let at: string | undefined;
+    for (; words[i] === '-C' || words[i] === '-c'; i += 2) if (words[i] === '-C') at = words[i + 1];
+    while (words[i]?.startsWith('-')) i++;
+    if (words[i] !== 'push') continue;
+    if (at && !/[$`]/.test(at)) return absolute(at, dir ?? cwd, home);
+    return dir;
+  }
+  return undefined;
 }
 
 // How many times a command runs `git <sub>` (`git -C dir commit` too), as

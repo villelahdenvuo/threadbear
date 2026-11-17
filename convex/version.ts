@@ -375,4 +375,8 @@
 //    place of a phone token, and tokens:claim trades it for the token from
 //    the phone's own scanner. A runner pairs phones only from 80, so no
 //    token goes into a QR code again.
-export const API_VERSION = 80;
+// 81: a thread row's approval card can carry `reason`, what made it ask
+//    (Auto's safety check, a file that runs as code, a patch Threadbear
+//    can't follow, a rule, an MCP tool), so the phone says why as the Mac
+//    does. A runner sends it only from 81.
+export const API_VERSION = 81;

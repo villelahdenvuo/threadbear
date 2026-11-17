@@ -28,6 +28,7 @@ export type CiWatch = {
   ref?: string; // a dispatch's --ref
   runId?: number; // a dispatch's run, once found
   repo?: string; // owner/name, from the push's output or -R
+  dir?: string; // the folder to ask git and gh in, when not the thread's
   since: string; // when it was pushed or dispatched
   done?: true; // nothing more to ask about
 };
@@ -74,6 +75,7 @@ export function addWatches(state: CiRunsState, hl: HighlightState): boolean {
     if (have.has(key)) continue;
     const w: CiWatch = { key, sha: item.sha, since: item.pushedAt ?? item.at };
     if (item.repo) w.repo = item.repo;
+    if (item.dir) w.dir = item.dir;
     state.watches.push(w);
     have.add(key);
     added = true;
@@ -96,11 +98,13 @@ export function addWatches(state: CiRunsState, hl: HighlightState): boolean {
   return added;
 }
 
-// Runs `gh` with these arguments in the thread's folder and resolves with
-// what it printed; rejects when it fails.
-export type Gh = (args: string[]) => Promise<string>;
-// Resolves a short sha to the full one in the thread's folder, if git can.
-export type RevParse = (sha: string) => Promise<string | undefined>;
+// Runs `gh` with these arguments in `dir` (the thread's folder when left
+// out) and resolves with what it printed; rejects when it fails.
+export type Gh = (args: string[], dir?: string) => Promise<string>;
+// Finds a short sha's commit in a repo on this Mac: in `dir` or the thread's
+// folder, or a repo a level or two inside it (a thread working in a folder of
+// repos). Its full sha, and the repo's folder when not the thread's.
+export type FindCommit = (sha: string, dir?: string) => Promise<{ full: string; dir?: string } | undefined>;
 
 export const RUN_FIELDS = 'databaseId,status,conclusion,workflowName,headSha,headBranch,url,event,createdAt';
 
@@ -142,16 +146,19 @@ const repoArgs = (w: CiWatch) => (w.repo && REPO.test(w.repo) ? ['-R', w.repo] :
 // One look at every open watch. Returns whether the runs changed. A failing
 // `gh` (not installed, not logged in, no network) is left for next time,
 // and counts as a quiet check, so it backs off like one.
-export async function check(state: CiRunsState, gh: Gh, revParse: RevParse, now: number): Promise<boolean> {
+export async function check(state: CiRunsState, gh: Gh, findCommit: FindCommit, now: number): Promise<boolean> {
   let changed = false;
   for (const w of state.watches) {
     if (w.done) continue;
     const age = now - Date.parse(w.since);
     let found: CiRun[];
     try {
-      found = await runsFor(w, gh, revParse);
-    } catch {
-      if (age > GIVE_UP_MS) w.done = true;
+      found = await runsFor(w, gh, findCommit);
+    } catch (e) {
+      // A commit in no repo here and with no repo named is let go now:
+      // asking again won't find it (a thread in a folder of repos was asked
+      // about for two hours, 14 Nov 2026).
+      if (age > GIVE_UP_MS || e === NOWHERE) w.done = true;
       continue;
     }
     for (const r of found) if (merge(state, r)) changed = true;
@@ -166,11 +173,27 @@ export async function check(state: CiRunsState, gh: Gh, revParse: RevParse, now:
   return changed;
 }
 
-async function runsFor(w: CiWatch, gh: Gh, revParse: RevParse): Promise<CiRun[]> {
+const NOWHERE = new Error('no repo here has that commit');
+
+async function runsFor(w: CiWatch, gh: Gh, findCommit: FindCommit): Promise<CiRun[]> {
   if (w.sha) {
-    w.full ??= await revParse(w.sha) ?? (w.repo && REPO.test(w.repo) ? (await gh(['api', `repos/${w.repo}/commits/${w.sha}`, '--jq', '.sha'])).trim() : undefined);
-    if (!w.full || !/^[0-9a-f]{40}$/.test(w.full)) throw new Error('no full sha');
-    return parse(await gh(['run', 'list', ...repoArgs(w), '--commit', w.full, '-L', '30', '--json', RUN_FIELDS]));
+    if (!w.full) {
+      const found = await findCommit(w.sha, w.dir);
+      if (found) {
+        w.full = found.full;
+        if (found.dir) w.dir = found.dir;
+        else delete w.dir;
+      } else if (w.repo && REPO.test(w.repo)) {
+        w.full = (await gh(['api', `repos/${w.repo}/commits/${w.sha}`, '--jq', '.sha'])).trim();
+      } else {
+        throw NOWHERE;
+      }
+    }
+    if (!/^[0-9a-f]{40}$/.test(w.full)) {
+      delete w.full;
+      throw new Error('no full sha');
+    }
+    return parse(await gh(['run', 'list', ...repoArgs(w), '--commit', w.full, '-L', '30', '--json', RUN_FIELDS], w.dir));
   }
   if (w.runId) return parse(await gh(['run', 'view', String(w.runId), ...repoArgs(w), '--json', RUN_FIELDS]));
   if (!w.workflow) return [];

@@ -686,6 +686,13 @@ export type Hunk = {
 export type PlanEntry = { text: string; status: 'pending' | 'in_progress' | 'completed' };
 
 export type ApprovalOption = 'allow' | 'allowAlways' | 'deny';
+
+// What made a card ask (docs/protocol.md, "Why a card asks"): Auto's
+// classifier, Claude Code's own safety check, a file that runs as code, a
+// patch Threadbear can't follow, that check failing, a permission rule, a
+// hook, Ask mode, a tool Threadbear always asks about, an MCP tool, or the
+// CLI with no more said.
+export type ApprovalSource = 'classifier' | 'safetyCheck' | 'code' | 'unsure' | 'error' | 'rule' | 'hook' | 'askMode' | 'alwaysAsk' | 'mcp' | 'cli';
 export type ApprovalDecision = 'allow' | 'allowAlways' | 'deny' | 'answered' | 'expired';
 
 // A call waiting behind an approval card, as its own card would show it.
@@ -831,8 +838,9 @@ export type EventBody =
       title: string;
       input: Record<string, unknown>;
       options: ApprovalOption[];
-      // Why it's asking (Auto's safety check, a rule, a hook), when the CLI says.
+      // Why it's asking, in a sentence that names what asked.
       reason?: string;
+      source?: ApprovalSource;
     }
   // The agent's other calls from the same reply, waiting behind this card
   // (docs/protocol.md, "Queued calls"). A later one replaces the list.

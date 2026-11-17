@@ -3,9 +3,10 @@
 // process per live thread and reports normalised output. Claude and Codex
 // are the two implementations of AgentAdapter.
 import type { SlashCommand } from '../slash-commands.ts';
-import type { CodeWrite } from '../code-writes.ts';
+import type { CodeWrite, CodeWriteWhy } from '../code-writes.ts';
 import type {
   Account,
+  ApprovalSource,
   BackgroundKind,
   ContextUsage,
   DeltaBody,
@@ -70,6 +71,8 @@ export type StartSessionOptions = {
   // always asks, with no "Always allow". The adapter checks the names in
   // code-writes.ts too, so leaving this out never asks less.
   runsAsCode?: (file: string) => CodeWrite;
+  // Why such an edit asks, for the card's reason line (codeWriteWhy).
+  codeWriteWhy?: (file: string) => CodeWriteWhy | undefined;
   // Claude, in Full with the folder's settings loaded: they hold
   // permission rules that aren't trusted for a thread that asks first, so
   // the session must be able to stop them applying if the thread leaves
@@ -194,13 +197,15 @@ export type ToolApprovalRequest = {
   // The agent's other calls waiting behind this one (docs/protocol.md,
   // "Queued calls"); more can join while it waits (an approvalQueue output).
   queued?: QueuedCall[];
-  // Why the CLI is asking, in a sentence for the card (askReason in the Claude adapter).
+  // Why it's asking, in a sentence for the card (askSource in the Claude adapter).
   reason?: string;
   // Full access would have let it through with no card: switching the
   // thread to Full answers it Allow (Runner.update), as a card that waits
   // under a composer saying Full is the thing Ian hit (13 Nov). Never on
   // a card every mode shows (delete_thread, a raise, a plan).
   fullAllows?: boolean;
+  // What made it ask (docs/protocol.md, "Why a card asks").
+  source?: ApprovalSource;
 };
 
 // mode: the permission mode to switch to as the call goes ahead (approving

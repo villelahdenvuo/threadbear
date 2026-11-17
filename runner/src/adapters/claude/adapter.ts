@@ -4,7 +4,7 @@ import { CONFINED_NO_SANDBOX, sandboxSpawner, type SandboxConfig } from '../../s
 import os from 'node:os';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { HookInput, McpServerConfig, ModelInfo, Options, PermissionResult, Query, SDKControlGetContextUsageResponse, SDKUserMessage, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
-import type { Account, ContextUsage, EffortLevel, ModelChoice, PermissionMode, Question, QueuedAnswers, QueuedCall } from '../../protocol.ts';
+import type { Account, ApprovalSource, ContextUsage, EffortLevel, ModelChoice, PermissionMode, Question, QueuedAnswers, QueuedCall } from '../../protocol.ts';
 import { isEffortLevel } from '../../protocol.ts';
 import fs from 'node:fs';
 import type { AgentAdapter, AgentSession, RewindRequest, RewindResult, SessionSink, StartSessionOptions, UserInput } from '../types.ts';
@@ -18,7 +18,7 @@ import { groupSpawner, type ProcessRegistry } from '../../proc.ts';
 import { prepareImageForModel } from '../../media.ts';
 import { placePictures } from '../../pictures.ts';
 import { EDIT_TOOLS, cardDecisive, cardInput, toolTitle, tooLongForCard } from '../../tools.ts';
-import { codeWriteNote, codeWriteReason, runsAsCodeByName, type CodeWrite } from '../../code-writes.ts';
+import { codeByName, codeWriteNote, codeWriteReason, MAYBE_RUNS_AS_CODE, RUNS_AS_CODE, runsAsCodeByName, type CodeWrite, type CodeWriteWhy } from '../../code-writes.ts';
 import path from 'node:path';
 import { RUNNER_VERSION } from '../../config.ts';
 import { stripModelSuffix } from '../../accounts.ts';
@@ -885,7 +885,7 @@ class ClaudeSession implements AgentSession {
   private async canUseTool(
     name: string,
     input: Record<string, unknown>,
-    o: { signal: AbortSignal; suggestions?: PermissionUpdate[]; toolUseID: string; title?: string; suppressAlwaysAllowRule?: boolean; agentID?: string; decisionReason?: string; decisionReasonType?: string },
+    o: { signal: AbortSignal; suggestions?: PermissionUpdate[]; toolUseID: string; title?: string; suppressAlwaysAllowRule?: boolean; agentID?: string; decisionReason?: string; decisionReasonType?: string; matchedAskRule?: { source: string; toolName: string; ruleContent?: string }; blockedPath?: string; mcpServer?: { name: string; source: string } },
   ): Promise<PermissionResult> {
     // A subagent's tool calls stay inside its Agent call (the normaliser
     // drops them), so there's no tool.call to wait for or point at.
@@ -936,8 +936,20 @@ class ClaudeSession implements AgentSession {
     if (card.tooLong) return { behavior: 'deny', message: tooLongForCard(card.tooLong), toolUseID: o.toolUseID };
     if (!sub) for (const out of this.normalizer.beforeApproval(o.toolUseID, name, input)) this.sink.output(out);
     const title = toolTitle(name, input, this.opts.cwd);
-    // A code write's title already says why it asks.
-    const reason = code ? undefined : askReason(o.decisionReason, o.decisionReasonType);
+    // What made it ask, named on the card (docs/protocol.md, "Why a card asks").
+    const asked = plan
+      ? undefined
+      : askSource({
+          name,
+          mode: this.mode,
+          code: code ? ((target !== undefined ? this.opts.codeWriteWhy?.(target) : undefined) ?? { source: code === 'unsure' ? 'unsure' : 'code', why: (target !== undefined ? codeByName(target) : undefined) ?? '' }) : undefined,
+          alwaysAsk: Boolean(this.deps.alwaysAsk?.has(name)),
+          reason: o.decisionReason,
+          reasonType: o.decisionReasonType,
+          rule: o.matchedAskRule,
+          blockedPath: o.blockedPath,
+          server: o.mcpServer?.name,
+        });
     // The rest of the reply's calls that will ask, on the same card.
     let waiting: WaitingCard | undefined;
     if (!sub && !plan) {
@@ -948,7 +960,7 @@ class ClaudeSession implements AgentSession {
     let ans: Awaited<ReturnType<SessionSink['requestApproval']>>;
     try {
       ans = await this.sink.requestApproval({
-        ...(reason ? { reason } : {}),
+        ...(asked ? { reason: asked.reason, source: asked.source } : {}),
         toolUseId: itemId,
         name,
         title: code ? `${title} (${codeWriteNote(code)})` : title,
@@ -1188,10 +1200,46 @@ export function commandScope(description: string | undefined): { text?: string; 
 // to Mike, a rule or a hook that asks. Not the mode itself, which every card
 // in Ask before edits would say. David, 8 Nov 2026: a deploy's card gave no
 // reason, and he couldn't tell what the check had balked at.
-export function askReason(reason: string | undefined, type: string | undefined): string | undefined {
-  const text = typeof reason === 'string' ? reason.trim().slice(0, 1000) : '';
-  if (!text || type === 'mode') return undefined;
-  return type === 'classifier' ? `Auto mode's safety check couldn't clear this: ${text}` : text;
+// Why a card asks, as a sentence naming what asked, and that as a kind
+// (docs/protocol.md, "Why a card asks"). On 14 Nov Ville's Auto thread asked
+// about plain Writes and nothing said it was a home patch Threadbear couldn't
+// follow; before, a card said why only when the CLI gave a reason.
+export type AskFacts = {
+  name: string;
+  mode: PermissionMode;
+  code?: CodeWriteWhy;
+  alwaysAsk?: boolean;
+  reason?: string;
+  reasonType?: string;
+  rule?: { source: string; toolName: string; ruleContent?: string };
+  blockedPath?: string;
+  server?: string;
+};
+
+export function askSource(f: AskFacts): { source: ApprovalSource; reason: string } {
+  // The CLI's words may carry ANSI escapes (sdk.d.ts).
+  const said = typeof f.reason === 'string' ? f.reason.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim().slice(0, 1000) : '';
+  const tool = f.name.startsWith('mcp__') ? f.name.split('__').slice(2).join('__') || f.name : f.name;
+  if (f.code) {
+    const why = f.code.why.trim().replace(/\.$/, '');
+    if (f.code.source === 'code') return { source: 'code', reason: `${RUNS_AS_CODE}${why ? `: ${why}` : ''}. Edits to it always ask outside Full access.` };
+    return { source: f.code.source, reason: why ? `${why}.` : `${MAYBE_RUNS_AS_CODE}, so edits ask outside Full access.` };
+  }
+  if (f.alwaysAsk) return { source: 'alwaysAsk', reason: `Threadbear always asks before ${tool}, in every mode.` };
+  const type = f.reasonType;
+  if (type === 'classifier') return { source: 'classifier', reason: `Auto mode's safety check couldn't clear this${said ? `: ${said}` : '.'}` };
+  if (type === 'safetyCheck' || type === 'subcommandResults') return { source: 'safetyCheck', reason: `Claude Code's safety check asks for this${said ? `: ${said}` : '.'}` };
+  if (f.rule || type === 'rule') {
+    const r = f.rule ? `${f.rule.toolName}${f.rule.ruleContent ? `(${f.rule.ruleContent})` : ''}` : '';
+    const where = f.rule?.source ? ` in ${f.rule.source} settings` : '';
+    return { source: 'rule', reason: r ? `The ask rule ${r}${where} asks for this.${said && type !== 'rule' ? ` ${said}` : ''}` : `A permission rule asks for this${said ? `: ${said}` : '.'}` };
+  }
+  if (type === 'hook') return { source: 'hook', reason: `A PreToolUse hook asked${said ? `: ${said}` : '.'}` };
+  if (type === 'workingDir') return { source: 'cli', reason: `It reaches outside the thread's folders${f.blockedPath ? ` (${f.blockedPath})` : ''}${said ? `: ${said}` : '.'}` };
+  if (f.mode === 'ask' && (type === 'mode' || type === undefined) && ASKS_IN_ASK.has(f.name)) return { source: 'askMode', reason: 'Ask mode asks before every edit, command and web fetch.' };
+  if (f.name.startsWith('mcp__')) return { source: 'mcp', reason: `${tool} is a tool from the ${f.server ?? f.name.split('__')[1]} MCP server, and those ask outside Full access until you always allow one.${said && type !== 'mode' ? ` ${said}` : ''}` };
+  if (said && type !== 'mode') return { source: 'cli', reason: said };
+  return { source: 'cli', reason: `Claude Code asked without saying why${type ? ` (${type}${said ? `: ${said}` : ''})` : ''}.` };
 }
 
 // A skill or command whose frontmatter says `disable-model-invocation:

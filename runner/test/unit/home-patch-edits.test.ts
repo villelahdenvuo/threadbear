@@ -268,3 +268,40 @@ test("the note leaves out a URL's password when the file is read the old way", a
   assert.ok(note);
   assert.doesNotMatch(note.text, /p4ss/);
 });
+
+// Ville, 14 Nov 2026: a home patch ran a script that ran scripts more than
+// 12 deep, so every edit in his Auto threads asked. The note said it once and
+// scrolled away, with "as it <file> runs" garbled; the card now says it too.
+test("an edit that asks because a home patch can't be followed says which patch, command and problem, for the card", async () => {
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 15; i++) files[`.threadbear/tools/a${i}.sh`] = `#!/bin/sh\nsh "$(dirname "$0")/a${i + 1}.sh"\n`;
+  files['.threadbear/tools/a15.sh'] = 'echo hi\n';
+  const { h, thread, cwd } = await withHomePatch(`import { join } from 'node:path';\nconst dir = join(import.meta.dirname, '..', 'tools');\nexport default { actions: [{ title: 'A', run: \`sh \${join(dir, 'a0.sh')}\` }] };`, files);
+  const why = h.runner.codeWriteWhy({ ...thread, cwd } as unknown as ThreadRecord, path.join(cwd, 'README.md'));
+  assert.equal(why?.source, 'unsure');
+  assert.match(why!.why, /p\.ts is loaded/);
+  assert.match(why!.why, /can't follow `sh /);
+  assert.match(why!.why, /, as a\d+\.sh runs scripts more than 12 deep/);
+  assert.doesNotMatch(why!.why, /as it a\d+\.sh/);
+  assert.equal(h.runner.codeWriteWhy({ ...thread, cwd } as unknown as ThreadRecord, path.join(cwd, 'README.md'))?.source, 'unsure', 'the same again');
+});
+
+test("a check that throws still asks, and the card says the check failed rather than nothing", async () => {
+  const { h, thread, cwd } = await withHomePatch(`export default { actions: [{ title: 'Tidy', run: 'git status --short' }] };`);
+  const rec = { ...thread, cwd } as unknown as ThreadRecord;
+  assert.equal(h.runner.codeWriteWhy(rec, path.join(cwd, 'README.md')), undefined, 'a plain file in a plain folder');
+  (h.runner as unknown as { accounts: { list: () => never } }).accounts.list = () => {
+    throw new Error('accounts unreadable');
+  };
+  assert.equal(h.runner.writeRunsAsCode(rec, path.join(cwd, 'README.md')), 'unsure');
+  const why = h.runner.codeWriteWhy(rec, path.join(cwd, 'README.md'));
+  assert.equal(why?.source, 'error');
+  assert.match(why!.why, /couldn't check whether this file runs as code \(accounts unreadable\)/);
+});
+
+test('a file that runs as code says why', async () => {
+  const { h, thread, cwd, patchFile } = await withHomePatch(`export default { actions: [{ title: 'Tidy', run: 'git status --short' }] };`);
+  const rec = { ...thread, cwd } as unknown as ThreadRecord;
+  assert.deepEqual(h.runner.codeWriteWhy(rec, patchFile), { source: 'code', why: "it's a Threadbear patch file" });
+  assert.deepEqual(h.runner.codeWriteWhy(rec, path.join(cwd, '.mcp.json')), { source: 'code', why: "it's an .mcp.json, which starts MCP servers" });
+});

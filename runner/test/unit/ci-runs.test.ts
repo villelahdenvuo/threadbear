@@ -9,7 +9,7 @@ import { makeHarness, tmpDir } from '../helpers/fakes.ts';
 import { PATIENCE_MS } from '../helpers/patience.ts';
 import { EXPERIMENTS } from '../../src/experiments.ts';
 import { addWatches, check, delayMs, emptyCiRuns, shellQuote, statusOf, watching } from '../../src/ci-runs.ts';
-import { dispatchOf, emptyHighlights, observe, pushedRepo } from '../../src/highlights.ts';
+import { dispatchOf, emptyHighlights, observe, pushDir, pushedRepo, view } from '../../src/highlights.ts';
 import type { PersistedEvent } from '../../src/protocol.ts';
 
 const FULL = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
@@ -91,8 +91,8 @@ test('ciRuns: asks while runs go, backs off when quiet, and stops once they fini
     calls.push(args);
     return JSON.stringify(answer);
   };
-  const revParse = async () => FULL;
-  assert.equal(await check(state, gh, revParse, T0 + 5_000), true);
+  const findCommit = async () => ({ full: FULL });
+  assert.equal(await check(state, gh, findCommit, T0 + 5_000), true);
   assert.deepEqual(calls[0].slice(0, 6), ['run', 'list', '-R', 'o/r', '--commit', FULL]);
   assert.deepEqual(state.runs.map((r) => [r.workflow, r.status, r.sha, r.url]), [
     ['CI', 'queued', 'a1b2c3d', 'https://github.com/o/r/actions/runs/1'],
@@ -100,35 +100,81 @@ test('ciRuns: asks while runs go, backs off when quiet, and stops once they fini
   ]);
   assert.equal(delayMs(state), 15_000);
   // Nothing new: quieter each time, up to two minutes.
-  assert.equal(await check(state, gh, revParse, T0 + 20_000), false);
+  assert.equal(await check(state, gh, findCommit, T0 + 20_000), false);
   assert.equal(delayMs(state), 30_000);
-  for (let i = 0; i < 5; i++) await check(state, gh, revParse, T0 + 30_000);
+  for (let i = 0; i < 5; i++) await check(state, gh, findCommit, T0 + 30_000);
   assert.equal(delayMs(state), 120_000);
   // All finished, past the settling time: done, and asked no more.
   answer = [ghRun(1, 'CI', 'completed', 'failure'), ghRun(2, 'Lint', 'completed', 'success')];
-  assert.equal(await check(state, gh, revParse, T0 + 60_000), true);
+  assert.equal(await check(state, gh, findCommit, T0 + 60_000), true);
   assert.deepEqual(state.runs.map((r) => r.status), ['failed', 'passed']);
   assert.equal(watching(state), false);
 });
 
 test('ciRuns: a push with no runs is let go after three minutes; a failing gh is tried again', async () => {
   const state = emptyCiRuns();
-  state.watches.push({ key: 'commit:a1b2c3d', sha: 'a1b2c3d', since: new Date(T0).toISOString() });
+  state.watches.push({ key: 'commit:a1b2c3d', sha: 'a1b2c3d', repo: 'o/r', since: new Date(T0).toISOString() });
   let fail = true;
   const gh = async () => {
     if (fail) throw new Error('gh: not logged in');
     return '[]';
   };
-  // Without a full sha nothing is asked.
+  // Not on this Mac: GitHub is asked for the full sha, and gh fails.
   await check(state, gh, async () => undefined, T0 + 10_000);
   assert.equal(watching(state), true);
-  await check(state, gh, async () => FULL, T0 + 10_000);
+  assert.equal(state.watches[0].full, undefined);
+  await check(state, gh, async () => ({ full: FULL }), T0 + 10_000);
   assert.equal(watching(state), true);
   fail = false;
-  await check(state, gh, async () => FULL, T0 + 60_000);
+  await check(state, gh, async () => ({ full: FULL }), T0 + 60_000);
   assert.equal(watching(state), true);
-  await check(state, gh, async () => FULL, T0 + 4 * 60_000);
+  await check(state, gh, async () => ({ full: FULL }), T0 + 4 * 60_000);
   assert.equal(watching(state), false);
+});
+
+test('ciRuns: a commit in another repo is asked about there; one found nowhere is let go at once', async () => {
+  const state = emptyCiRuns();
+  state.watches.push({ key: 'commit:a1b2c3d', sha: 'a1b2c3d', dir: '/x/sub', since: new Date(T0).toISOString() });
+  state.watches.push({ key: 'commit:0000aaa', sha: '0000aaa', since: new Date(T0).toISOString() });
+  const asked: [string, string | undefined][] = [];
+  const looked: [string, string | undefined][] = [];
+  const gh = async (args: string[], dir?: string) => {
+    asked.push([args.slice(0, 2).join(' '), dir]);
+    return JSON.stringify([ghRun(1, 'CI', 'queued')]);
+  };
+  const findCommit = async (sha: string, dir?: string) => {
+    looked.push([sha, dir]);
+    return sha === 'a1b2c3d' ? { full: FULL, dir: '/x/repos/one' } : undefined;
+  };
+  await check(state, gh, findCommit, T0 + 5_000);
+  assert.deepEqual(looked, [['a1b2c3d', '/x/sub'], ['0000aaa', undefined]]);
+  assert.deepEqual(asked, [['run list', '/x/repos/one']]);
+  assert.equal(state.watches[0].dir, '/x/repos/one');
+  assert.equal(state.watches[1].done, true, 'nothing to ask, so not asked again');
+  await check(state, gh, findCommit, T0 + 20_000);
+  assert.equal(looked.length, 2, 'found once');
+  assert.deepEqual(asked.at(-1), ['run list', '/x/repos/one']);
+});
+
+test('ciRuns: the folder a push ran in comes from its command', () => {
+  assert.equal(pushDir('cd sub && git push 2>&1 | tail -2', '/x', '/h'), '/x/sub');
+  assert.equal(pushDir('cd /a/b; cd c && git commit -qm x && git push -u origin feat', '/x', '/h'), '/a/b/c');
+  assert.equal(pushDir('git -C ~/repo push', '/x', '/h'), '/h/repo');
+  assert.equal(pushDir('git push', '/x', '/h'), undefined);
+  assert.equal(pushDir('cd "$W" && git push', '/x', '/h'), undefined);
+  assert.equal(pushDir('git push && cd later', '/x', '/h'), undefined);
+  const hl = emptyHighlights();
+  observe(hl, [
+    ev({ type: 'tool.call', itemId: 'c', name: 'Bash', kind: 'command', title: '', input: { command: 'cd sub && git commit -qm x && git log --oneline -1 && git push -u origin feat 2>&1 | tail -2' } }),
+    ev({ type: 'tool.result', itemId: 'c', ok: true, text: 'a1b2c3d Fix it\nbranch \'feat\' set up to track \'origin/feat\'.\n', truncated: false, images: [] }),
+  ], { cwd: '/x', home: '/h', exists: () => false });
+  const commit = hl.items.find((i) => i.id === 'commit:a1b2c3d')!;
+  assert.equal(commit.pushed, true);
+  assert.equal(commit.dir, '/x/sub');
+  assert.equal(view(hl).highlights[0].dir, undefined, 'not sent to clients');
+  const state = emptyCiRuns();
+  addWatches(state, hl);
+  assert.equal(state.watches[0].dir, '/x/sub');
 });
 
 test('ciRuns: a re-run of a finished run shows it going again, and follows it until it finishes', async () => {
@@ -232,6 +278,30 @@ test('ciRuns: a push in a thread shows its runs in Highlights, and the runner st
   h.clock.advance(10 * 60_000);
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(commands.length, asked, 'nothing more asked');
+});
+
+test('ciRuns: a thread in a folder of repos finds the one its push came from, though the push printed no repo', async () => {
+  const { h, id, setRuns } = setup();
+  const s = h.adapter.sessions.at(-1)!;
+  const cwd = h.runner.get(id).cwd;
+  const calls: [string, string][] = [];
+  const runs = [ghRun(1, 'CI', 'in_progress')];
+  h.runner.ciShell = async (at, command) => {
+    calls.push([at, command]);
+    if (command.startsWith('git rev-parse')) throw new Error('not a git repository');
+    if (command.startsWith('find ')) return `./repos/one\n${FULL}\n`;
+    return JSON.stringify(runs);
+  };
+  setRuns(runs);
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'p', name: 'Bash', kind: 'command', title: 'push', input: { command: 'git commit -qm "Fix it" && git log --oneline -1 && git push -u origin feat 2>&1 | tail -2' } } });
+  s.out({ kind: 'event', event: { type: 'tool.result', itemId: 'p', ok: true, text: 'a1b2c3d Fix it\nbranch \'feat\' set up to track \'origin/feat\'.\n', truncated: false, images: [] } });
+  await until(() => Boolean(h.runner.threads.get(id)!.rt.ciTimer), 'a look booked');
+  h.clock.advance(5_000);
+  await until(() => (h.runner.highlights(id).runs?.length ?? 0) > 0, 'the run');
+  const gh = calls.find(([, c]) => c.startsWith('gh'))!;
+  assert.equal(gh[0], path.join(cwd, 'repos/one'));
+  assert.match(gh[1], /^gh 'run' 'list' '--commit' 'a1b2c3d4/);
+  assert.equal(calls.filter(([, c]) => c.startsWith('find ')).length, 1);
 });
 
 test('ciRuns: a re-run in a thread is followed even though gh prints nothing', async () => {

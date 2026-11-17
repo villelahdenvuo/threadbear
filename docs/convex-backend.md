@@ -540,7 +540,7 @@ Queries:
   sections: with `phone:wakes` it puts an idle thread a schedule will
   message under Hibernating, by the same rules as app ThreadSections. `pendingApproval`
   (from step 2) is `{ approvalId, kind: "approval", name, title, options:
-  ("allow" | "allowAlways" | "deny")[], inputSummary? }` or `{ approvalId,
+  ("allow" | "allowAlways" | "deny")[], inputSummary?, reason? }` (`reason`, what made it ask, from API 81) or `{ approvalId,
   kind: "question", questions: Question[] }` with the protocol's
   `Question` shape.
 - `phone:counts({ token })` → `{ hibernating, den }` (API 17): how many

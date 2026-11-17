@@ -1073,7 +1073,7 @@ Persisted event types (stored in `events.ndjson`, returned by `threads.events`):
 | `tool.call` | `itemId`, `name` (raw tool name), `kind` (`command` \| `read` \| `edit` \| `write` \| `search` \| `web` \| `mcp` \| `task` \| `todo` \| `image` \| `other`; `image` is image generation), `title` (one line, e.g. "npm test" or "Edit src/a.ts"), `input` (object, large strings truncated to 16 KB) |
 | `tool.result` | `itemId` (matches the call), `ok`, `text` (truncated to 64 KB), `truncated`, `blobPath?`, `images: ImageRef[]` |
 | `edit.diff` | `itemId`, `path`, `hunks: {oldStart, oldLines, newStart, newLines, lines: string[]}[]` (lines start with " ", "-" or "+"); sent after `tool.call` for Edit/MultiEdit/Write when the runner can compute it. One event per file: a tool that changes several files (a Codex patch) has one per path. A later `edit.diff` with the same `itemId` and `path` replaces that file's diff; a new path adds one |
-| `approval.requested` | `approvalId`, `itemId?` (absent for a subagent's tools, which have no `tool.call`), `name`, `title`, `input` (a command, and every argument of an MCP tool or a file edit, whole: a call with one longer than 16 KB is refused with no card; other strings cut as in `tool.call`), `options: ("allow" \| "allowAlways" \| "deny")[]`, `reason?` (why it's asking, when Claude's CLI says: Auto's safety check couldn't clear the call, a rule or a hook asks; never the permission mode itself. Clients show it under the title. A call the CLI refuses without a card, such as one Auto's check stops, is a `system.note` saying why, when it gives a reason). A subagent's card (no `itemId`) needs no turn: it can come with no `turnId`, and it outlives the turn it came in ("A subagent's card") |
+| `approval.requested` | `approvalId`, `itemId?` (absent for a subagent's tools, which have no `tool.call`), `name`, `title`, `input` (a command, and every argument of an MCP tool or a file edit, whole: a call with one longer than 16 KB is refused with no card; other strings cut as in `tool.call`), `options: ("allow" \| "allowAlways" \| "deny")[]`, `reason?` (a sentence saying what made it ask, which clients show under the title, marked ⓘ) and `source?` (that as a kind, `ApprovalSource`): see "Why a card asks". A call the CLI refuses without a card, such as one Auto's check stops, is a `system.note` saying why, when it gives a reason). A subagent's card (no `itemId`) needs no turn: it can come with no `turnId`, and it outlives the turn it came in ("A subagent's card") |
 | `question.requested` | `approvalId`, `itemId?` (absent for a subagent's), `questions: {question, header?, multiSelect, options: {label, description?}[]}[]` |
 | `secret.requested` | `approvalId`, `itemId?`, `label`, `reason`, `placeholder?`: an agent's `ask_secret` (Secrets). Answered with `secrets.answer`, never `approvals.respond` |
 | `approval.queued` | `approvalId`, `calls: {itemId, name, title, input}[]`: the agent's other tool calls from the same reply that are waiting behind this card and expected to ask too, in order, each with its input as a card would show it. A later one replaces the list (it grows as more calls stream in). A client that doesn't know it shows the card on its own, and each queued call asks with a card of its own later ("Queued calls") |
@@ -2456,6 +2456,34 @@ order.
 
 An older runner hands the agent the markers as words, with every picture
 before them; an older app shows them as words.
+
+## Why a card asks
+
+Ville, 14 Nov 2026: plain Writes asked in an Auto thread, and nothing on the
+card said why. It was a home patch Threadbear couldn't follow, said once in a
+note that had scrolled away. So every Claude card says what asked, in
+`approval.requested`'s `reason` and `source`:
+
+| `source` | When | `reason` says |
+| --- | --- | --- |
+| `code` | an edit of a file that runs as code ("Agent writes that run as code") | why it runs: a patch file, Claude settings, the patch or hook that runs it |
+| `unsure` | an edit while a patch that loads without a hash runs something Threadbear can't follow | the patch, the command and the problem, as Patches says it |
+| `error` | the check of whether the file runs as code threw (logged as a warning) | that the check failed, and its error |
+| `classifier` | Auto's safety check couldn't clear the call | the check's own words |
+| `safetyCheck` | Claude Code's own safety check (a sensitive path, a risky command) | its words |
+| `rule` | an ask rule in the settings | the rule and which settings it's in |
+| `hook` | a PreToolUse hook asked | the hook's words |
+| `askMode` | Ask before edits asks for an edit, command or web fetch | that |
+| `alwaysAsk` | a tool Threadbear always asks about (`delete_thread`) | that |
+| `mcp` | an MCP tool, with nothing more specific said | the tool and its server |
+| `cli` | anything else (outside the thread's folders, or no reason) | the CLI's words, or that it gave none and its reason type |
+
+A code write wins over the CLI's reason: the runner's hook is why it came to a
+card. Codex's cards carry Codex's own reason in their input and have no
+`source`. A threadbear tool's raise-access card has its title as `reason`; the
+Mac app doesn't repeat it. The phone gets `reason` on the thread row's card
+(backend API 81, scrubbed as its input line is), and another Mac's relay puts
+it back on the card.
 
 ## Queued calls
 
@@ -4940,14 +4968,20 @@ time a client asks and then from where it got to:
   marks that branch's commits `pushed`.
 
 **Runs** (experiment `ciRuns`, off by default). A commit marked `pushed`
-with a `repo`, or one whose short sha resolves in the thread's folder, and
+with a `repo`, or one whose short sha resolves in a repo on this Mac, and
 a `gh workflow run` that worked (its workflow, `--ref`, `-R`, and the run's
 id when gh printed the run's URL), and a `gh run rerun <id or URL>` (that
 run, by id) are watched. The runner asks the `gh`
 CLI on the user's own login, in the thread's folder through a login shell:
 `gh run list --commit <full sha>` for a commit, the first
 `workflow_dispatch` run of that workflow since the dispatch, then
-`gh run view <id>`, for a dispatch. It never reads a token. A re-run is
+`gh run view <id>`, for a dispatch. It never reads a token. A commit is
+looked for in the folder the push ran in (`git -C dir push`, or a `cd dir`
+before it in the same command), then the thread's folder, then the first
+repo or worktree one or two levels inside the thread's folder that has it
+(a thread working in a folder of repos); `gh run list` then runs in that
+repo's folder. A commit found nowhere, with no `repo`, is let go at once.
+A re-run is
 followed with `gh run view <id>`. The first look
 is 5 seconds after the result of such a command (told by the command, as
 gh prints nothing for a re-run outside a terminal, or by its output)
@@ -6408,7 +6442,7 @@ the mirror back as state. The Mac app doesn't use it.
   `loadEarlier`, with `beforeSeq`) marks up to 50 text messages before that
   seq as paged (`pagedAt`), so `phone:thread` shows them for a day.
 - **Approvals.** An `approval.requested` puts `{ approvalId, kind:
-  "approval", name, title, options, inputSummary? }` on the thread's row
+  "approval", name, title, options, inputSummary?, reason? }` (`reason` from backend API 81, "Why a card asks") on the thread's row
   (`inputSummary` is one line: the command, the path, or the first string
   in the input, at most 200 characters, never the whole input). A card that
   line can't show all of (a command over 160 characters or on more than one

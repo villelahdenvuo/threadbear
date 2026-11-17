@@ -11,11 +11,13 @@ test("approval.requested carries the CLI's reason, and leaves it out when there'
   const s = h.adapter.last;
   s.init();
   const signal = new AbortController().signal;
-  void s.sink.requestApproval({ toolUseId: 't1', name: 'Bash', title: './deploy.sh', input: { command: './deploy.sh' }, canAlwaysAllow: true, signal, reason: "Auto mode's safety check couldn't clear this: Deploys to production." });
+  void s.sink.requestApproval({ toolUseId: 't1', name: 'Bash', title: './deploy.sh', input: { command: './deploy.sh' }, canAlwaysAllow: true, signal, reason: "Auto mode's safety check couldn't clear this: Deploys to production.", source: 'classifier' });
   void s.sink.requestApproval({ toolUseId: 't2', name: 'Bash', title: 'ls', input: { command: 'ls' }, canAlwaysAllow: true, signal });
   await tick();
   const cards = h.events(thread.id).filter((e) => e.type === 'approval.requested');
   assert.equal(cards[0].reason, "Auto mode's safety check couldn't clear this: Deploys to production.");
+  assert.equal(cards[0].source, 'classifier');
   assert.equal('reason' in cards[1], false);
+  assert.equal('source' in cards[1], false);
   for (const c of cards) assert.deepEqual(checkEvent(c), []);
 });
