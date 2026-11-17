@@ -9,7 +9,12 @@ import { test } from 'node:test';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 
-for (const mode of ['ordinary', 'perf', 'try', 'try-env', 'busy-copy', 'busy-run']) test(`remote.sh host leases: ${mode}`, async (t) => {
+// On Ville's Mac the --try runs fail: something sends KILL to the fake ssh
+// within a second (17 Nov 2026, also on plain main; perf-lock.pl --try alone
+// works). Until that's found, a check there can skip them with
+// THREADBEAR_SKIP_REMOTE_TRY_TESTS=1. Every other Mac and CI still runs them.
+const skipTry = process.env.THREADBEAR_SKIP_REMOTE_TRY_TESTS === '1' && 'the fake ssh is killed on this Mac (THREADBEAR_SKIP_REMOTE_TRY_TESTS)';
+for (const mode of ['ordinary', 'perf', 'try', 'try-env', 'busy-copy', 'busy-run']) test(`remote.sh host leases: ${mode}`, { skip: mode === 'ordinary' || mode === 'perf' ? false : skipTry }, async (t) => {
   const perf = mode === 'perf';
   const tryOnly = mode === 'try' || mode.startsWith('busy-');
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-remote-perf-'));
