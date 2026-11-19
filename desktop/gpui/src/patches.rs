@@ -186,6 +186,37 @@ impl SidePane {
         .detach();
     }
 
+    /// A list row's switch pressed: shows the new state at once, asks the
+    /// runner (`panels.toggle`), then draws its rows. A failure puts the old
+    /// state back and says why in a toast.
+    fn press_switch(&mut self, thread_id: String, panel_id: String, toggle_id: String, on: bool, cx: &mut Context<Self>) {
+        let key = panel_key(&thread_id, &panel_id);
+        if let Some(items) = self.panels.renders.get_mut(&key).and_then(|r| r.items.as_mut()) {
+            PanelItem::set_switch(items, &toggle_id, on);
+        }
+        cx.notify();
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let res = call(client, "panels.toggle", json!({ "threadId": thread_id, "panelId": panel_id, "toggleId": toggle_id, "on": on })).await;
+            this.update(cx, |t, cx| {
+                match res {
+                    Ok(v) => {
+                        t.panels.renders.insert(key, PanelRender::decode(&v));
+                    }
+                    Err(e) => {
+                        if let Some(items) = t.panels.renders.get_mut(&key).and_then(|r| r.items.as_mut()) {
+                            PanelItem::set_switch(items, &toggle_id, !on);
+                        }
+                        t.note_error(e.message.clone(), cx);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// A patch-given panel's section: a list, a picture, or (for now) a page's placeholder.
     pub(crate) fn render_panel(&mut self, thread: &ThreadSummary, id: &str, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = palette(cx);
@@ -283,10 +314,10 @@ impl SidePane {
                 }
             });
             let open = more.as_ref().is_some_and(|m| m.open);
-            list = list.child(self.list_row(item, format!("panel-row-{index}"), reserves, false, more, thread, p, cx));
+            list = list.child(self.list_row(key, item, format!("panel-row-{index}"), reserves, false, more, thread, p, cx));
             if open {
                 for (n, child) in item.folded().iter().enumerate() {
-                    list = list.child(self.list_row(child, format!("panel-row-{index}-{n}"), true, true, None, thread, p, cx));
+                    list = list.child(self.list_row(key, child, format!("panel-row-{index}-{n}"), true, true, None, thread, p, cx));
                 }
             }
         }
@@ -296,7 +327,7 @@ impl SidePane {
     /// A row with a link or a file opens it the way a highlight does. A row
     /// with neither but with folded rows opens and closes them, like its link.
     #[allow(clippy::too_many_arguments)]
-    fn list_row(&mut self, item: &PanelItem, id: String, reserves: bool, indent: bool, more: Option<crate::highlights::MoreLink>, thread: &ThreadSummary, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+    fn list_row(&mut self, key: &str, item: &PanelItem, id: String, reserves: bool, indent: bool, more: Option<crate::highlights::MoreLink>, thread: &ThreadSummary, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let color = match item.tone_kind() {
             Some("attention") => Some(p.needs_you),
             Some("failed") => Some(p.failed),
@@ -307,6 +338,20 @@ impl SidePane {
             _ => None,
         };
         let toggle = more.as_ref().map(|m| m.toggle.clone());
+        // Its switch: lit at once, then the runner's rows (`panels.toggle`).
+        let switch = item.switch().map(|t| {
+            let (thread_id, panel_key, toggle_id, on) = (thread.id.clone(), key.strip_prefix(&format!("{}/", thread.id)).map(str::to_owned), t.id.clone(), !t.on);
+            crate::highlights::RowSwitch {
+                symbol: t.symbol().to_owned(),
+                on: t.on,
+                tip: t.tip(),
+                press: Rc::new(move |this: &mut SidePane, cx: &mut Context<SidePane>| {
+                    if let Some(panel_id) = panel_key.clone() {
+                        this.press_switch(thread_id.clone(), panel_id, toggle_id.clone(), on, cx);
+                    }
+                }),
+            }
+        });
         // A patch's detail is usually a sentence, so it gets two lines and keeps its start.
         let mut row = PaneRow::new(SharedString::from(id), item.title.clone())
             .icon_opt(item.symbol())
@@ -316,7 +361,8 @@ impl SidePane {
             .trailing(item.trailing.clone())
             .trailing_symbol(if item.tone_kind() == Some("done") && item.icon.is_some() { Some("checkmark") } else { None })
             .detail(item.detail.clone())
-            .detail_lines(2);
+            .detail_lines(2)
+            .switch(switch);
         if indent {
             row = row.indent();
         }

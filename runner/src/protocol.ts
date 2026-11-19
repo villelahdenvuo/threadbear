@@ -627,6 +627,9 @@ export type PanelItem = {
   // Rows folded under this one, opened by a link (label) at the end of the
   // detail line. One level: theirs have no `more` or `section`.
   more?: { label: string; items: PanelItem[] };
+  // A switch at the end of the title's line; a press sends panels.toggle
+  // (docs/protocol.md, "Row toggles").
+  toggle?: { id: string; on: boolean; icon?: string; title?: string };
 };
 
 export type BackgroundKind = 'agent' | 'shell' | 'monitor' | 'other';

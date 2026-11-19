@@ -1073,6 +1073,16 @@ pub(crate) struct PaneRow {
     /// A link with a chevron at the end of the detail line that opens and
     /// closes rows folded under this one (a list panel row's `more`).
     pub more: Option<MoreLink>,
+    /// A switch at the end of the title's line (a list panel row's `toggle`).
+    pub switch: Option<RowSwitch>,
+}
+
+/// `PaneRow.switch`: its icon, lit when on, its tooltip, and what a press does.
+pub(crate) struct RowSwitch {
+    pub symbol: String,
+    pub on: bool,
+    pub tip: String,
+    pub press: Rc<dyn Fn(&mut SidePane, &mut Context<SidePane>)>,
 }
 
 /// `PaneRow.more`: the link's words, whether its rows are open, and what a
@@ -1104,7 +1114,13 @@ impl PaneRow {
             on_menu: None,
             drag: None,
             more: None,
+            switch: None,
         }
+    }
+
+    pub(crate) fn switch(mut self, switch: Option<RowSwitch>) -> Self {
+        self.switch = switch;
+        self
     }
 
     pub(crate) fn more(mut self, more: Option<MoreLink>) -> Self {
@@ -1205,7 +1221,35 @@ impl PaneRow {
             .child(div().min_w_0().truncate().text_size(px(style::size::LABEL)).line_height(px(style::natural_line(style::size::LABEL))).text_color(label_color).child(self.title.clone()))
             .child(div().flex_1().min_w(px(4.)))
             .when_some(self.trailing, |s, t| s.child(div().flex_none().text_size(px(style::size::SMALL)).line_height(px(style::natural_line(style::size::SMALL))).text_color(p.faint).child(t)))
-            .when_some(self.trailing_symbol, |s, symbol| s.child(icon(&symbol, 11., p.secondary)));
+            .when_some(self.trailing_symbol, |s, symbol| s.child(icon(&symbol, 11., p.secondary)))
+            .when_some(self.switch.take(), |s, switch| {
+                // Its own press: the row's click (open the PR) doesn't fire.
+                let press = switch.press.clone();
+                let (fill, color) = if switch.on { (style::primary_opacity(cx, 0.14), p.accent) } else { (gpui_kit::transparent_black(), p.faint) };
+                let hover = style::primary_opacity(cx, 0.22);
+                s.child(
+                    tipped(
+                        div()
+                            .id(SharedString::from(format!("pane-switch-{}", self.title)))
+                            .flex_none()
+                            .size(px(20.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(5.))
+                            .bg(fill)
+                            .hover(move |st| st.bg(hover))
+                            .cursor_pointer()
+                            .child(icon(&switch.symbol, 12., color)),
+                        switch.tip,
+                    )
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        cx.stop_propagation();
+                        (press)(this, cx);
+                    })),
+                )
+            });
         let body = v_flex()
             .flex_1()
             .min_w_0()

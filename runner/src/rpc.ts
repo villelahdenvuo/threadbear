@@ -99,6 +99,7 @@ export const THREAD_METHODS = new Set([
   'plans.approve',
   'secrets.answer',
   'panels.render',
+  'panels.toggle',
   'panels.convexKey',
   'panels.convexDeployments',
   'panels.convexLogin',
@@ -892,6 +893,10 @@ export class RpcServer {
         return r.importMedia(reqString(p, 'path'));
       case 'panels.render':
         return r.renderPanel(reqString(p, 'threadId'), reqString(p, 'panelId'));
+      case 'panels.toggle': {
+        if (typeof p.on !== 'boolean') throw bad('on must be a boolean');
+        return r.togglePanel(reqString(p, 'threadId'), reqString(p, 'panelId'), reqString(p, 'toggleId'), p.on);
+      }
       case 'panels.convexKey':
         return r.convexPanelKey(reqString(p, 'threadId'), reqString(p, 'panelId'), p.renew === true, optString(p, 'deployment'));
       case 'panels.convexLogin':

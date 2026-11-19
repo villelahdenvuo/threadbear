@@ -17,7 +17,7 @@ import { CLAUDE_PATCH_ID, claudeCommands, claudeOptions, settingsCommands, setti
 import { canonicalPath, codeByName, type CodeWrite, type CodeWriteWhy } from '../code-writes.ts';
 import { patchCommands, sayValue } from '../patch-commands.ts';
 import type { PatchInfo } from '../protocol.ts';
-import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, runCommand, PATCH_SH_MAX_BYTES, type CommandOutcome, type PanelRender, type PatchSet, type PatchThread, type ProjectFolder, projectPatchFiles } from '../patches.ts';
+import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, toggleListPanel, runCommand, PATCH_SH_MAX_BYTES, type CommandOutcome, type PanelRender, type PatchSet, type PatchThread, type ProjectFolder, projectPatchFiles } from '../patches.ts';
 import { liveCommandEnv } from '../shell-allowlist.ts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -801,6 +801,28 @@ export const patchesPart = {
       });
     }
     return renderPanel(panel, paths.panels(this.cfg.home, threadId), this.screenshot);
+  },
+
+  // A list row's switch (`panels.toggle`): the patch's toggle function, then
+  // the rows again.
+  async togglePanel(this: Runner, threadId: string, panelId: string, toggleId: string, on: boolean): Promise<PanelRender> {
+    const st = this.mustGet(threadId);
+    const panel = this.patchSet(st).panels.find((p) => p.id === panelId);
+    if (!panel || panel.kind !== 'list') throw new RpcError(ErrorCode.badParams, `This thread has no list panel called ${panelId}`);
+    const ctx = {
+      cwd: st.rec.cwd,
+      threadId,
+      thread: this.patchThread(st.rec),
+      run: (command: string, cwd: string) => this.runPatchCommand(threadId, command, cwd),
+      verify: (file: string, hash: string) => this.patchTrust.verify(file, hash),
+    };
+    try {
+      return await toggleListPanel(panel, this.patchSet(st), ctx, toggleId, on);
+    } catch (e) {
+      const message = String((e as Error)?.message ?? e);
+      if (message === 'This panel has no switches.') throw new RpcError(ErrorCode.badParams, message);
+      throw new RpcError(ErrorCode.other, message);
+    }
   },
 
   // Cloud deployments in the Convex panel's project, through its CLI.

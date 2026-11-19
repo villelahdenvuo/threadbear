@@ -527,6 +527,15 @@ type PanelItem = {
     items: PanelItem[]  // drawn indented under the row while open; their own `more` and
                         // `section` are ignored; at most 50
   }
+  toggle?: {            // a switch drawn as an icon at the end of the title's line,
+                        // lit when on and faint when off; a press calls panels.toggle.
+                        // Only on rows of a panel whose patch has a `toggle` function
+                        // (see Patches, "Row toggles"); also on folded rows
+    id: string          // what panels.toggle hands back; at most 200 characters
+    on: boolean
+    icon?: string       // an SF Symbol name; absent: "power"
+    title?: string      // the tooltip ("Auto-fix #812"); at most 80 characters
+  }
 }
 
 // A grouping above folders that carries goals, state and notes forward
@@ -1153,6 +1162,7 @@ the summary and then the reply.
 | `patches.trust` | `{ threadId, files: { file, hash }[] }` | `{ trusted: string[] }`. Trusts those versions of the thread's waiting patch files (each a `file` its `patches` lists with `untrusted`, and the `hash` given there), then every thread's patches are read again, so the answer comes once they have been. The `claude` entry's file trusts the folder's Claude Code settings the same way. `-32602` for a file the thread isn't waiting on, or one whose hash has moved on since (look again). See "Trusting a folder's patches" |
 | `actions.run` | `{ threadId, actionId }` | For a prompt action, `{ turnId }`: its prompt was sent as a message (as `threads.send`). For a url action (only an older client calls it for one), `{ ok: true, durationMs }` once the page is opened on the runner's Mac, with nothing in the transcript. For a command action, `{ ok, exitCode?, durationMs, seq }` once the command has finished, with its output in the transcript as the `action.run` event at `seq`. The command runs in the thread's folder through a login shell with the thread's variables (`THREADBEAR_THREAD_ID` and the rest) and is stopped after 10 minutes. `-32602` for an action the thread doesn't have, `-32020` while the same action is still running |
 | `panels.render` | `{ threadId, panelId }` | `{ image?: ImageRef, items?: PanelItem[], note?: string }` draws an `image` panel or fills a `list` panel now. For `xcode.simulator`, a screenshot of the booted simulator (`xcrun simctl io booted screenshot`), written to the same file each time under the thread's `panels/`; with no device booted (or another failure) there's only `note`. For a `list` panel, the rows its patch's `items` function returned (at most 200), or `note` with the error when it threw or took over 20 seconds. Slow: it waits for the screenshot or the function. `-32602` for a panel the thread doesn't have |
+| `panels.toggle` | `{ threadId, panelId, toggleId, on }` | `{ items?: PanelItem[], note?: string }` calls the `toggle` function of the list panel's patch with `{ id: toggleId, on }` and the same context as `items`, then fills the panel again and answers as `panels.render` does, so the row shows its new state at once. A throw or a call over 20 seconds comes back as `-32000` with its first line. `-32602` for a panel the thread doesn't have, or one without a `toggle` function |
 | `panels.convexDeployments` | `{ threadId, panelId, refresh?: boolean }` | `{ deployments: { deployment, deploymentUrl, label }[], note?: string }`. The configured cloud deployment and the project's Development and Production deployments, resolved through the runner's own Convex CLI, run in the project's folder, with read-only queries of `process.env.CONVEX_CLOUD_URL`. Duplicate names are combined; `note` explains unavailable choices. Cached for one minute; `refresh` bypasses the cache. Makes no deploy keys and changes no project settings. `-32602` for a missing or non-cloud panel |
 | `panels.convexKey` | `{ threadId, panelId, deployment?: string, renew?: boolean }` | `{ deployment, deploymentUrl, adminKey }`, a deploy key for a panel with `convex`, for Convex's embedded dashboard. `deployment` defaults to the panel's configured deployment; any other name must be one returned by `panels.convexDeployments` for this panel's project. The runner makes it the first time (`convex deployment token create` in the project's folder, with the runner's own Convex CLI, so an older `convex` package in the project doesn't matter, on Mike's Convex CLI login) and keeps it in `secrets/convex-panels/<deployment>.json`; `renew` deletes that one from Convex and makes a fresh one. A kept key is first checked with the deployment's `/api/check_admin_key` (only at its own `<name>[.<region>].convex.cloud` address), and one Convex says no to (revoked) is replaced the same way; an unclear answer keeps it. Slow the first time. `-32602` for a panel the thread doesn't have or one without `convex`; `-32040` when the runner's Convex CLI isn't signed in (or its login expired), `-32041` when its login can't reach the deployment, otherwise `-32000` with the CLI's message, each in plain words |
 | `panels.convexLogin` | `{ threadId, panelId, check?: boolean, force?: boolean }` | `{ state: "idle" \| "waiting" \| "done" \| "failed", url?, code?, message? }`. Signs the runner's Convex CLI in (`convex login --no-open --login-flow poll`), for a panel that got `-32040` (or `-32041`, with `force`, to switch accounts). Answers once the CLI prints its device page: `url` to open in the browser on the Mac the person is at (any browser can approve it, so a remote runner's sign-in works from here), `code` what that page shows. A call while one is waiting joins it. `check` only reports: poll it until `done` (then the deployment list is fetched afresh) or `failed` (`message` says why, or that it wasn't approved within the code's five minutes) |
@@ -3995,6 +4005,27 @@ project's patch it's one script in the repo and plain words (see
   hooks: [
     { title: "Typecheck", on: "turn.end", run: "./scripts/typecheck.sh", edited: "**/*.{ts,tsx}" },
   ],
+```
+
+**Row toggles.** A list panel can also have `toggle`, a function that
+gets the same context as `items` plus `id` and `on`. A row that
+`items` gives a `toggle` (`{ id, on, icon?, title? }`) gets a switch
+at the end of its title's line: the icon, lit when `on` and faint when
+not. A press sends `panels.toggle`, which calls the function with the
+row's `id` and the new `on`, then fills the panel again. The patch keeps
+the state itself (a file it writes), and `items` reads it back. A row's
+`toggle` from a panel with no `toggle` function is dropped. The PRs patch
+uses one to watch a PR for auto-fix:
+
+```ts
+  panels: [{
+    title: "PRs",
+    items: async ({ sh }) => prs(await sh("node data.mjs")).map((p) => ({
+      title: p.title,
+      toggle: { id: p.url, on: p.watched, icon: "wand.and.stars", title: `Auto-fix ${p.short}` },
+    })),
+    toggle: ({ sh, id, on }) => sh(`node data.mjs --watch ${on ? "on" : "off"} ${id}`),
+  }],
 ```
 
 **Live state.** An action or panel can also have `when` and `badge`,

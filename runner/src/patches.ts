@@ -616,7 +616,7 @@ export function readPatchModule(id: string, source: 'home' | 'project', file: st
   if (v.panels !== undefined) {
     if (!Array.isArray(v.panels)) return problem('panels should be an array.');
     for (const [i, raw] of v.panels.entries()) {
-      const p = raw as { title?: unknown; url?: unknown; note?: unknown; icon?: unknown; items?: unknown; when?: unknown; badge?: unknown; summary?: unknown };
+      const p = raw as { title?: unknown; url?: unknown; note?: unknown; icon?: unknown; items?: unknown; toggle?: unknown; when?: unknown; badge?: unknown; summary?: unknown };
       if (!p || typeof p !== 'object' || typeof p.title !== 'string' || !p.title.trim()) return problem(`panels[${i}] needs a title.`);
       const ownIcon = readIcon(p.icon, file);
       if (typeof ownIcon === 'string') return problem(`panels[${i}] ("${p.title}"): icon ${ownIcon}`);
@@ -628,6 +628,10 @@ export function readPatchModule(id: string, source: 'home' | 'project', file: st
         if (p.url !== undefined) return problem(`panels[${i}] ("${p.title}") should have url or items, not both.`);
         panel = { id: panelId, title: p.title.trim(), kind: 'list', patch: id };
         listFunctions.set(listKey(file, panelId.slice(id.length)), p.items as ItemsFunction);
+        // A row's switch calls this (panels.toggle, "Row toggles").
+        if (p.toggle !== undefined && typeof p.toggle !== 'function') return problem(`panels[${i}] ("${p.title}") has a toggle that isn't a function.`);
+        if (typeof p.toggle === 'function') toggleFunctions.set(listKey(file, panelId.slice(id.length)), p.toggle as ToggleFunction);
+        else toggleFunctions.delete(listKey(file, panelId.slice(id.length)));
       } else {
         // A page the web view can open: a scheme with //, or a data: page.
         if (typeof p.url !== 'string' || !/^([a-z][a-z0-9+.-]*:\/\/\S|data:)/i.test(p.url.trim())) return problem(`panels[${i}] ("${p.title}") needs a url, or an items function.`);
@@ -1065,6 +1069,11 @@ type ItemsFunction = (ctx: ItemsContext) => unknown;
 const listFunctions = new Map<string, ItemsFunction>();
 const listKey = (file: string, suffix: string) => `${file}\u0000${suffix}`;
 
+// The `toggle` functions of list panels, keyed like listFunctions: what a
+// row's switch calls (panels.toggle).
+type ToggleFunction = (ctx: ItemsContext & { id: string; on: boolean }) => unknown;
+const toggleFunctions = new Map<string, ToggleFunction>();
+
 export const LIST_ITEMS_KEPT = 200;
 export const LIST_TIMEOUT_MS = 20_000;
 
@@ -1078,6 +1087,7 @@ export async function renderListPanel(
   const info = set.patches.find((p) => p.id === panel.patch);
   const fn = info?.file ? listFunctions.get(listKey(info.file, panel.id.slice(panel.patch.length))) : undefined;
   if (!fn) return { note: 'This panel has nothing to show.' };
+  const switches = info?.file ? toggleFunctions.has(listKey(info.file, panel.id.slice(panel.patch.length))) : false;
   // A project folder's patch runs in that folder, as its actions do.
   const cwd = info?.folder ?? ctx.cwd;
   const shIn = liveSh(info?.file, cwd, ctx);
@@ -1091,13 +1101,54 @@ export async function renderListPanel(
       }),
     ]);
     if (!Array.isArray(value)) return { note: "The panel's items function didn't return a list." };
-    return { items: value.slice(0, LIST_ITEMS_KEPT).map((x) => panelItem(x)).filter((x): x is PanelItem => x !== undefined) };
+    const items = value.slice(0, LIST_ITEMS_KEPT).map((x) => panelItem(x)).filter((x): x is PanelItem => x !== undefined);
+    return { items: switches ? items : items.map(withoutToggle) };
   } catch (e) {
     return { note: `Couldn't fill this panel: ${firstLine(e)}` };
   } finally {
     clearTimeout(timer);
     shIn.close();
   }
+}
+
+// A row as it goes out from a panel with no toggle function: no switch,
+// as pressing it could do nothing.
+function withoutToggle(item: PanelItem): PanelItem {
+  const { toggle: _, ...rest } = item;
+  return rest.more ? { ...rest, more: { ...rest.more, items: rest.more.items.map(withoutToggle) } } : rest;
+}
+
+// Calls a list panel's toggle function for a row's switch (panels.toggle),
+// then fills the panel again so the row shows its new state. A throw or a
+// timeout rejects with its first line.
+export async function toggleListPanel(
+  panel: Panel,
+  set: PatchSet,
+  ctx: LiveContext,
+  id: string,
+  on: boolean,
+): Promise<PanelRender> {
+  const info = set.patches.find((p) => p.id === panel.patch);
+  const fn = info?.file ? toggleFunctions.get(listKey(info.file, panel.id.slice(panel.patch.length))) : undefined;
+  if (!fn) throw new Error('This panel has no switches.');
+  const cwd = info?.folder ?? ctx.cwd;
+  const shIn = liveSh(info?.file, cwd, ctx);
+  const sh = async (command: string) => shText(command, await shIn.run(command));
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, thread: ctx.thread ?? NO_THREAD, matched: info?.matched ?? [], sh, id, on }), shIn)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`took over ${Math.round((ctx.timeoutMs ?? LIST_TIMEOUT_MS) / 1000)} seconds`)), ctx.timeoutMs ?? LIST_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (e) {
+    throw new Error(`Couldn't switch it: ${firstLine(e)}`);
+  } finally {
+    clearTimeout(timer);
+    shIn.close();
+  }
+  return renderListPanel(panel, set, ctx);
 }
 
 // ------------------------------------------------------------ live state
@@ -1230,6 +1281,12 @@ export function panelItem(raw: unknown, nested = false): PanelItem | undefined {
   if (typeof r.section === 'string' && r.section.trim()) item.section = r.section.trim().slice(0, 80);
   if (typeof r.trailing === 'string' && r.trailing.trim()) item.trailing = r.trailing.trim().slice(0, 24);
   if (nested) delete item.section;
+  const toggle = r.toggle as Record<string, unknown> | undefined;
+  if (toggle && typeof toggle === 'object' && typeof toggle.id === 'string' && toggle.id.trim() && typeof toggle.on === 'boolean') {
+    item.toggle = { id: toggle.id.trim().slice(0, 200), on: toggle.on };
+    if (typeof toggle.icon === 'string' && toggle.icon.trim()) item.toggle.icon = toggle.icon.trim().slice(0, 100);
+    if (typeof toggle.title === 'string' && toggle.title.trim()) item.toggle.title = toggle.title.trim().slice(0, 80);
+  }
   const more = r.more as Record<string, unknown> | undefined;
   if (!nested && more && typeof more === 'object' && typeof more.label === 'string' && more.label.trim() && Array.isArray(more.items)) {
     const items = more.items.slice(0, MORE_ITEMS_KEPT).map((x) => panelItem(x, true)).filter((x): x is PanelItem => x !== undefined);

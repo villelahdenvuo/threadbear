@@ -36,6 +36,7 @@ and web" is the iPhone app and the website, which read every thread through Conv
 | A panel being shown | `threads.panelShown` | No: Patches run on that Mac. | No: No panels on the phone. |
 | Opening a panel | `threads.showPanel` | No: Patches run on that Mac. | No: No panels on the phone. |
 | Drawing a panel | `panels.render` | No: Patches run on that Mac. | No: No panels on the phone. |
+| A list panel row's switch | `panels.toggle` | No: Patches run on that Mac. | No: No panels on the phone. |
 | The Convex panel's key | `panels.convexKey` | No: Patches run on that Mac. | No: No panels on the phone. |
 | The Convex panel's deployments | `panels.convexDeployments` | No: Patches run on that Mac. | No: No panels on the phone. |
 | The Convex panel's login | `panels.convexLogin` | No: Patches run on that Mac. | No: No panels on the phone. |

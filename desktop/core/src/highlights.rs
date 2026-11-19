@@ -1292,6 +1292,36 @@ pub struct PanelItem {
     /// line. One level: theirs are ignored (`folded`).
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub more: Option<Box<PanelMore>>,
+    /// A switch at the end of the title's line; a press sends `panels.toggle`.
+    #[serde(default, deserialize_with = "crate::wire::field")]
+    pub toggle: Option<PanelToggle>,
+}
+
+/// A list row's switch (`PanelItem.toggle`, docs/protocol.md "Row toggles").
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct PanelToggle {
+    #[serde(default, deserialize_with = "crate::wire::field")]
+    pub id: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
+    pub on: bool,
+    #[serde(default, deserialize_with = "crate::wire::field")]
+    pub icon: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
+    pub title: Option<String>,
+}
+
+impl PanelToggle {
+    /// Its icon, "power" when the patch gave none.
+    pub fn symbol(&self) -> &str {
+        self.icon.as_deref().filter(|i| !i.is_empty()).unwrap_or("power")
+    }
+
+    /// Its tooltip: the patch's words and what a press does.
+    pub fn tip(&self) -> String {
+        let what = self.title.as_deref().filter(|t| !t.is_empty()).unwrap_or("Switch");
+        format!("{what}: {}", if self.on { "on. Click to turn off." } else { "off. Click to turn on." })
+    }
 }
 
 /// A list row's folded rows (`PanelItem.More`).
@@ -1321,6 +1351,24 @@ impl PanelItem {
     /// section and link or file, else its title (`ListPanelKey`).
     pub fn key(&self) -> String {
         format!("{}\u{0}{}", self.section.as_deref().unwrap_or(""), self.url.as_deref().or(self.path.as_deref()).unwrap_or(&self.title))
+    }
+
+    /// Its switch, when it has one with an id to send back.
+    pub fn switch(&self) -> Option<&PanelToggle> {
+        self.toggle.as_ref().filter(|t| !t.id.is_empty())
+    }
+
+    /// Every row's switch set to `on` where its id is `id`, folded rows too:
+    /// what a press shows at once, before the runner answers.
+    pub fn set_switch(items: &mut [PanelItem], id: &str, on: bool) {
+        for item in items {
+            if let Some(t) = item.toggle.as_mut().filter(|t| t.id == id) {
+                t.on = on;
+            }
+            if let Some(more) = item.more.as_mut() {
+                PanelItem::set_switch(&mut more.items, id, on);
+            }
+        }
     }
 
     pub fn tone_kind(&self) -> Option<&str> {
@@ -1715,6 +1763,24 @@ mod tests {
         let item = |section: Option<&str>| PanelItem { title: "x".into(), section: section.map(str::to_owned), ..Default::default() };
         let items = [item(Some("This branch")), item(Some("This branch")), item(Some("Elsewhere")), item(None)];
         assert_eq!(PanelItem::headings(&items), [Some("This branch".to_owned()), None, Some("Elsewhere".to_owned()), None]);
+    }
+
+    #[test]
+    fn a_list_rows_switch_reads_and_flips_folded_rows_too() {
+        let v = serde_json::json!({ "items": [
+            { "title": "#1", "toggle": { "id": "o/r#1", "on": true, "icon": "wand.and.stars", "title": "Auto-fix #1" } },
+            { "title": "2 PRs", "more": { "label": "2 PRs", "items": [{ "title": "#2", "toggle": { "id": "o/r#2", "on": false } }] } },
+            { "title": "bad", "toggle": { "id": "", "on": "yes" } },
+        ] });
+        let mut items = PanelRender::decode(&v).items.unwrap();
+        let first = items[0].switch().unwrap();
+        assert_eq!((first.symbol(), first.on), ("wand.and.stars", true));
+        assert_eq!(first.tip(), "Auto-fix #1: on. Click to turn off.");
+        assert!(items[2].switch().is_none());
+        PanelItem::set_switch(&mut items, "o/r#2", true);
+        let folded = items[1].folded();
+        assert_eq!(folded[0].switch().map(|t| (t.symbol(), t.on)), Some(("power", true)));
+        assert_eq!(folded[0].switch().unwrap().tip(), "Switch: on. Click to turn off.");
     }
 
     #[test]
