@@ -606,3 +606,13 @@ test('tb land inside a thread asks the runner where its worktree is, wherever it
     await server.close();
   }
 });
+
+test('a branch that changes no files lands without its check', async () => {
+  const { main } = makeRepo();
+  const t = makeBranch(main);
+  sh(t.path, 'git commit -q --allow-empty -m "Marks a port" -m "Ports: abc"');
+  const c = capture();
+  assert.equal(await land({ ...t, check: 'exit 1' }, c.opts), 0);
+  assert.match(c.out.join('\n'), /changes no files, so it lands without the check/);
+  assert.equal(sh(main, 'git log -1 --format=%s main'), 'Marks a port');
+});

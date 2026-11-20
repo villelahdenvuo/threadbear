@@ -1476,6 +1476,13 @@ async function landLocked(
     } catch (e) {
       return fail(`Couldn't read the repo's patches for its check: ${(e as Error).message}`);
     }
+    // A branch that changes no file (an empty commit, one with only a
+    // Ports: trailer) has nothing a check could find: it lands without one.
+    // On 20 Nov one waited 25 minutes for a check of nothing.
+    if (check && (await git(t.path, ['diff', '--quiet', main, own])).ok) {
+      out(`${t.branch} changes no files, so it lands without the check.`);
+      check = undefined;
+    }
     if (!opts.dryRun && !ready.hasMerge && !alone) {
       let stacked = await stackWaiting(t, common, main, limit, check ?? null, opts.checkFrom ?? '', withFixes, true, allowed);
       let top = stacked.group.length ? await replay(t.path, main, own, stacked.tip) : undefined;
