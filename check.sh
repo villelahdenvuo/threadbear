@@ -455,11 +455,28 @@ runner_unit_tests() {
       return
     fi
   fi
+  # --quick (tb land's check) leaves out the slow tests of Threadbear's own
+  # tooling (landing, worktrees, check hosts, releases) when nothing they
+  # import or run changed (scripts/tooling-tests.mjs). The full check, --all
+  # and --only still run them.
+  local note=""
+  if [ "$QUICK" = 1 ] && [ "$ALL" = 0 ] && [ "$asked" = "${asked#*=}" ] && [ -n "$CHANGED" ]; then
+    local skipping=() all_files=() t
+    printf '%s\n' "$CHANGED" >"$LOGS/changed-files.txt"
+    while IFS= read -r t; do [ -n "$t" ] && skipping+=("$t"); done < <("$NODE" "$ROOT/scripts/tooling-tests.mjs" "$LOGS/changed-files.txt" 2>/dev/null)
+    if [ "${#skipping[@]}" -gt 0 ]; then
+      while IFS= read -r t; do
+        case " ${skipping[*]} " in *" $t "*) ;; *) all_files+=("$t") ;; esac
+      done < <(cd "$dir" && find test/unit -name '*.test.ts' | LC_ALL=C sort)
+      targets=("${all_files[@]}")
+      note="  (left out ${#skipping[@]} tooling test files: nothing they test changed)"
+    fi
+  fi
   local run=(node --import=./test/helpers/clean-env.ts --test --test-timeout=300000 --test-force-exit --test-reporter=spec)
   if (cd "$dir" && "${run[@]}" --test-reporter-destination=stdout \
       --test-reporter=./test/helpers/failed-files-reporter.mjs --test-reporter-destination="$list" \
       "${targets[@]}") >"$log" 2>&1; then
-    printf 'ok    %-20s %4ss\n' "$name" "$((SECONDS - start))"
+    printf 'ok    %-20s %4ss%s\n' "$name" "$((SECONDS - start))" "$note"
     return
   fi
   local files=()
