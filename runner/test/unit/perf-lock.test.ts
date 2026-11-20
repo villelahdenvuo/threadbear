@@ -611,11 +611,15 @@ test('stopped child groups retire their anchors during a continuing lease', asyn
       const c = driver.child('perl', ['-e', 'open(my $f, ">", $ARGV[0]); print {$f} $$; close $f; sleep 30;', file], {});
       while (!fs.existsSync(file) || !fs.readFileSync(file, 'utf8')) await new Promise(r => setTimeout(r, 10));
       const done = new Promise(r => c.once('exit', r)); await driver.killChild(c); await done;
-      groups.push(c.pid);
+      groups.push(c.pid); console.log('stopped child ' + i);
     }
     fs.writeFileSync(${JSON.stringify(groupsFile)}, JSON.stringify({ registry: process.env.THREADBEAR_PERF_CHILDREN, groups }));
     console.log('stopped twenty'); setInterval(() => {}, 1000);`);
   const first = h.run([process.execPath, entry]);
+  // Twenty starts and stops one after another: at a load of 37 (Ville's Mac,
+  // 20 Nov) they took more than the minute one wait gets, so each child gets
+  // its own minute.
+  for (let i = 0; i < 20; i++) await until(() => first.output.includes(`stopped child ${i}\n`), `sequential child ${i} did not stop`);
   await until(() => first.output.includes('stopped twenty'), 'sequential children did not stop');
   const { registry, groups } = JSON.parse(fs.readFileSync(groupsFile, 'utf8')) as { registry: string; groups: number[] };
   const live = () => {
