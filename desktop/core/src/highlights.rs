@@ -320,6 +320,7 @@ pub mod fold {
     pub const PINNED: &str = "pinned";
     pub const FILES: &str = "files";
     pub const LINKS: &str = "links";
+    pub const PRS: &str = "prs";
     pub const RUNS: &str = "runs";
     pub const CHANGES: &str = "changes";
 
@@ -334,8 +335,10 @@ pub struct HighlightSections {
     pub brief: Option<String>,
     pub pinned: Vec<Highlight>,
     pub files: Vec<Highlight>,
-    /// Links and pull requests.
+    /// Links, and pull requests unless `split_prs` moved them to `prs`.
     pub links: Vec<Highlight>,
+    /// Pull requests (experiment prHighlights), after `split_prs`.
+    pub prs: Vec<Highlight>,
     /// GitHub Actions runs, newest first (experiment ciRuns).
     pub runs: Vec<CiRun>,
     pub commits: Vec<Highlight>,
@@ -375,8 +378,17 @@ impl HighlightSections {
         out
     }
 
+    /// Pull requests under a heading of their own (experiment prHighlights),
+    /// and out of Links so none is listed twice. Pinned ones stay pinned.
+    pub fn split_prs(mut self) -> HighlightSections {
+        let (prs, links): (Vec<Highlight>, Vec<Highlight>) = std::mem::take(&mut self.links).into_iter().partition(|h| h.kind == HighlightKind::Pr);
+        self.prs = prs;
+        self.links = links;
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.brief.is_none() && self.pinned.is_empty() && self.files.is_empty() && self.links.is_empty() && self.runs.is_empty() && self.commits.is_empty() && self.edited.is_empty()
+        self.brief.is_none() && self.pinned.is_empty() && self.files.is_empty() && self.links.is_empty() && self.prs.is_empty() && self.runs.is_empty() && self.commits.is_empty() && self.edited.is_empty()
     }
 
     /// The first `limit` of a group (they come newest first) and how many more
@@ -1702,6 +1714,9 @@ mod tests {
         assert_eq!(titles(&sections.files), ["copy.md"]);
         // The unknown kind with a url is a link; the one with neither is left out.
         assert_eq!(titles(&sections.links), ["m/site#14", "localhost:4321", "A future link"]);
+        let split = sections.clone().split_prs();
+        assert_eq!(titles(&split.prs), ["m/site#14"]);
+        assert_eq!(titles(&split.links), ["localhost:4321", "A future link"]);
         assert_eq!(sections.commits[0].sha.as_deref(), Some("abc1234"));
         // A file already listed isn't repeated under edited, nor is a repeat.
         assert_eq!(sections.edited, ["/w/site/src/Hero.tsx", "/w/site/src/app.css"]);

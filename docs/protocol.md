@@ -1372,6 +1372,7 @@ the summary and then the reply.
 | `github.pr` | `{ url, files? }` | `PrView` (see Pull requests). With `files: false`, without its files (`files: []`, `filesLater: true`). `-32602` for a link that isn't a github.com PR; gh's own error (`-32000`) when it can't be read |
 | `github.prFiles` | `{ url }` | `{ files, filesError?, filesCut? }`: a PR's files alone, as in `PrView` |
 | `github.prStates` | `{ urls: string[] }` | `{ states: { [url]: "open" \| "draft" \| "merged" \| "closed" } }`. A link it couldn't place is left out |
+| `github.prStatus` | `{ urls: string[] }` | `{ prs: { [url]: PrStatus } }` (see Pull requests), for Highlights' Pull requests (experiment `prHighlights`; `-32000` while it's off). A PR GitHub doesn't give is left out |
 | `github.prAct` | `{ url, action, method?, body? }` | `{}` once GitHub has it, or gh's own error. `action` is `merge` (with `method` `rebase`, `squash` or `merge`), `close`, `reopen`, `comment` (`body`), `approve` (`body?`) or `requestChanges` (`body`) |
 | `connectors.status` | `{ refresh?: boolean }` | `{ connectors: ConnectorsStatus }` (see Connectors). `refresh` asks the gateway's `/health` first, unless it did in the last 10 seconds; the app passes it when the Connectors panel opens. A runner from before Connectors answers `-32601` and the app leaves the panel out |
 | `librarian.run` | `{ threadId?: string }` | `{ librarian: LibrarianStatus }`. Queues a look at the thread now (reason `asked`), or with no `threadId`, at every thread it has never looked at (a backfill, newest first) |
@@ -5852,6 +5853,29 @@ asks `github.pr` with `files: false` and `github.prFiles` together, and
 shows the PR while its files are on their way. A runner older than that
 ignores `files` and answers `github.prFiles` with `-32601`, and the app
 keeps the files the first answer brought.
+
+With the `prHighlights` experiment, Highlights lists a thread's PRs (its
+`pr` highlights that aren't pinned) under Pull requests, above Links, which
+no longer lists them. While that shows, the app asks `github.prStatus` for
+them: one `gh api graphql` call for up to 40 PRs, each answer kept 30
+seconds, so the app asks again as it redraws.
+
+```ts
+type PrStatus = {
+  title: string;
+  state: 'open' | 'draft' | 'merged' | 'closed';
+  ci: 'passed' | 'failed' | 'pending' | '';   // the head commit's checks, '' for none
+  review: '' | 'approved' | 'changes' | 'required';
+  mergeable: 'yes' | 'conflicts' | 'unknown';
+  unresolved: number;      // review threads not resolved (the first 100)
+  updatedAt: string;
+};
+```
+
+A row is red when CI failed or changes were asked for, yellow while it
+waits (CI running, a review, a conflict or open threads), green once it's
+approved with CI passing, plain as a draft. Merged and closed PRs fold
+under a Show merged row at the section's foot.
 
 `github.prStates` gives the coloured state of each PR link in a transcript,
 one `gh pr list` per repo (its latest 300), kept a minute; `github.prAct`

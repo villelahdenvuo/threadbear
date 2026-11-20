@@ -17,7 +17,7 @@ import type { CallerGate } from './rpc-gate.ts';
 import type { PeerSocket } from './peer.ts';
 import { cutSafely } from './safe-cut.ts';
 import { wellFormedJson } from './well-formed-json.ts';
-import { fetchPr, fetchPrFiles, forgetStates, parsePrUrl, prAct, prStates, type PrAction, type PrRef } from './github-pr.ts';
+import { fetchPr, fetchPrFiles, forgetStates, parsePrUrl, prAct, prStates, prStatus, type PrAction, type PrRef } from './github-pr.ts';
 
 type Conn = {
   id: number;
@@ -1018,6 +1018,13 @@ export class RpcServer {
       case 'github.prStates': {
         if (!Array.isArray(p.urls) || p.urls.some((u) => typeof u !== 'string')) throw bad('urls must be an array of strings');
         return ghCall(async () => ({ states: await prStates(p.urls as string[]) }));
+      }
+      // What decides whether each of a thread's PRs can merge, for
+      // Highlights' Pull requests (experiment prHighlights).
+      case 'github.prStatus': {
+        if (!Array.isArray(p.urls) || p.urls.some((u) => typeof u !== 'string')) throw bad('urls must be an array of strings');
+        if (!experimentOn(r.cfg.home, 'prHighlights')) throw new RpcError(ErrorCode.other, 'The prHighlights experiment is off.');
+        return ghCall(async () => ({ prs: await prStatus(p.urls as string[]) }));
       }
       case 'github.prAct': {
         const ref = reqPrRef(p);
