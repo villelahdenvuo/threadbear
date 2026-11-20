@@ -34,14 +34,14 @@ function checkout(webTest = 'true') {
   copy('scripts/limit-step.mjs');
   copy('runner/test/helpers/failed-files-reporter.mjs');
   put('runner/package.json', JSON.stringify({ scripts: { typecheck: 'true' } }));
-  put('runner/node_modules/.keep', '');
+  put('runner/node_modules/.package-lock.json', '{}');
   put('runner/test/helpers/clean-env.ts', '');
   put('runner/test/unit/ok.test.ts', PASSES);
   put('package.json', JSON.stringify({ scripts: { 'convex:typecheck': 'true', 'web:typecheck': 'true', 'web:test': webTest, lint: 'true', 'lint:files': 'true' } }));
-  put('node_modules/.keep', '');
+  put('node_modules/.package-lock.json', '{}');
   put('app/Tools/ok.mjs', '');
   put('app/Tools/mock-runner/ok.mjs', '');
-  put('app/Tools/mock-runner/node_modules/.keep', '');
+  put('app/Tools/mock-runner/node_modules/.package-lock.json', '{}');
   put('desktop/.keep', '');
   // swift and cargo that pass at once.
   put('bin/swift', '#!/bin/bash\n', 0o755);
