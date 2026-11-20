@@ -1755,7 +1755,8 @@ impl TranscriptModel {
         }
         match &item.content {
             RowContent::User(message) => !message.is_from_runner(),
-            RowContent::Error { .. } | RowContent::Footer(_) | RowContent::Asks(_) | RowContent::Review(_) | RowContent::Gap(_) | RowContent::PlanCard(_) => true,
+            // A move's divider is a row of its own, never work folded away.
+            RowContent::Error { .. } | RowContent::Footer(_) | RowContent::Asks(_) | RowContent::Review(_) | RowContent::Gap(_) | RowContent::PlanCard(_) | RowContent::Move(_) => true,
             RowContent::Images { generated, .. } => *generated,
             RowContent::Tool(tool) => Self::is_taken_end_turn(tool) || self.pressed_runs.contains(&item.id),
             _ => false,

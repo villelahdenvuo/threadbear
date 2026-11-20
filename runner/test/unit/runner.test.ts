@@ -651,11 +651,11 @@ test('a dated snooze or a message clears an until-restart snooze', () => {
 test('an archive says who did it, and Alex\'s verdict goes in the thread', () => {
   const h = makeHarness();
   const { thread } = create(h);
-  // ⌘E or a swipe: Alex, no verdict, no note.
+  // ⌘E or a swipe: Alex, no verdict, and the move's own line.
   const plain = h.runner.update({ threadId: thread.id, archived: true }).thread;
   assert.equal(plain.archivedBy, 'mike');
   assert.equal(plain.archiveVerdict, undefined);
-  assert.ok(!h.events(thread.id).some((e) => e.type === 'system.note' && /Archived by you/.test(e.text)));
+  assert.equal(h.events(thread.id).filter((e) => e.type === 'system.note').at(-1).text, 'Archived by you.');
   // Back, then the done card's menu: the verdict, and a note saying it.
   h.runner.update({ threadId: thread.id, archived: false });
   assert.equal(h.runner.get(thread.id).archivedBy, undefined, 'only while archived');

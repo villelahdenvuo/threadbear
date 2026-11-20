@@ -3290,8 +3290,7 @@ export class Runner {
     if (waitFor && !rt.turn && !rec.archivedAt && !this.stopping) this.waitOn(st, waitFor, snooze, turn.endTurnBy);
     else if (snooze && !rt.turn && !rec.archivedAt && !this.stopping) this.snoozeAfterTurn(st, snooze);
     else if (forApp && !rt.turn && !rec.archivedAt && !this.stopping) {
-      this.emit(st, { type: 'system.note', text: 'Hibernating until the Threadbear app restarts onto the new build, a day at most.' });
-      this.update({ threadId: rec.id, snoozedUntil: new Date(this.clock.now() + APP_RESTART_MAX_AGE_MS).toISOString() });
+      this.update({ threadId: rec.id, snoozedUntil: new Date(this.clock.now() + APP_RESTART_MAX_AGE_MS).toISOString(), moveNote: { by: 'agent', text: 'Hibernating until the Threadbear app restarts onto the new build, a day at most.' } });
       // After update, which clears it with the rest of a wait: the app shows
       // it under Running, as its work isn't over until Mike's running it.
       rec.hibernatedForApp = true;
@@ -5043,9 +5042,13 @@ export class Runner {
     // Without archive something in the thread is still to do (a dialog
     // still up, or the access still missing), so it stays in Needs you.
     if (archive) st.rec.forceUnread = false;
+    // Archived now, the note is the move's line, said once.
+    if (archive && !st.rt.turn && !st.rec.archivedAt && this.opening(threadId).text === undefined) {
+      this.update({ threadId, archived: true, archivedBy: 'threadbear', moveNote: { text } });
+      return;
+    }
     this.emit(st, { type: 'system.note', text });
     this.markDirty(st);
-    if (archive && !st.rt.turn && !st.rec.archivedAt && this.opening(threadId).text === undefined) this.update({ threadId, archived: true, archivedBy: 'threadbear' });
   }
 }
 

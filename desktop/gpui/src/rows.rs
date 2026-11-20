@@ -588,7 +588,7 @@ impl ThreadPane {
         let rule = || div().flex_1().min_w(px(16.)).h(px(1.)).bg(line);
         let words = h_flex()
             .id(SharedString::from(format!("move-{}", row.id)))
-            .flex_shrink()
+            .flex_shrink(1.)
             .min_w_0()
             .gap(px(5.))
             .items_center()
