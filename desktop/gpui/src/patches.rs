@@ -6,7 +6,7 @@
 // draws one if it's asked to anyway, as a placeholder with Open in browser.
 use crate::spinner::Spinner;
 use crate::call;
-use crate::highlights::{icon, palette, tipped, tipped_as, PaneRow, Palette, SidePane, OUTER_INSET};
+use crate::highlights::{icon, palette, tipped, tipped_as, with_scroll_bar, PaneRow, Palette, SidePane, OUTER_INSET};
 use crate::style;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _, StyledExt as _};
 use gpui_kit::prelude::*;
@@ -38,6 +38,16 @@ pub(crate) struct PanelsState {
     /// Each list panel's rows with their folded rows open, by
     /// "<thread>/<panel>" and then `PanelItem::key`.
     pub open: HashMap<String, HashSet<String>>,
+    /// List row switches pressed and not yet answered, by "<thread>/<panel>"
+    /// and the switch's id, with the state they were pressed to. They take
+    /// no more presses until then, and a refill that lands meanwhile still
+    /// shows them pressed.
+    switching: HashMap<(String, String), bool>,
+    /// The Patches list's scroll, for its scroll bar.
+    scroll: ScrollHandle,
+    /// Each list panel's scroll by panel id, for its scroll bar: two panels
+    /// can show side by side, and one scroll between them would move both.
+    list_scrolls: HashMap<String, ScrollHandle>,
 }
 
 use std::rc::Rc;
@@ -162,15 +172,22 @@ impl SidePane {
             let picture = match render.image.as_ref() {
                 Some(image) => {
                     let read = call(client, "files.read", json!({ "path": image.path })).await.ok().as_ref().and_then(threadbear_core::folders::FileRead::decode);
-                    read.map(|r| r.data)
+                    match read {
+                        // Shrunk, off this thread, when it's bigger than the GPU draws (fit_picture.rs).
+                        Some(read) => {
+                            let jpeg = image.media_type.contains("jpeg");
+                            let format = if jpeg { ImageFormat::Jpeg } else { ImageFormat::Png };
+                            // One too big to shrink shows nothing, as one that can't be read.
+                            cx.background_executor().spawn(async move { crate::fit_picture::fit_bytes(format, read.data) }).await
+                        }
+                        None => None,
+                    }
                 }
                 None => None,
             };
             this.update(cx, |t, cx| {
                 match picture {
-                    Some(bytes) => {
-                        let format = render.image.as_ref().map(|i| i.media_type.clone()).unwrap_or_default();
-                        let format = if format.contains("jpeg") { ImageFormat::Jpeg } else { ImageFormat::Png };
+                    Some((format, bytes)) => {
                         t.panels.pictures.insert(key.clone(), Arc::new(Image::from_bytes(format, bytes)));
                     }
                     None if render.image.is_none() => {
@@ -178,6 +195,8 @@ impl SidePane {
                     }
                     None => {}
                 }
+                let mut render = render;
+                t.keep_pressed(&key, &mut render);
                 t.panels.renders.insert(key, render);
                 cx.notify();
             })
@@ -186,11 +205,28 @@ impl SidePane {
         .detach();
     }
 
+    /// A refill that came in while a switch's press is on its way still
+    /// shows the switch as pressed.
+    fn keep_pressed(&self, key: &str, render: &mut PanelRender) {
+        let Some(items) = render.items.as_mut() else { return };
+        for ((panel, id), on) in &self.panels.switching {
+            if panel == key {
+                PanelItem::set_switch(items, id, *on);
+            }
+        }
+    }
+
     /// A list row's switch pressed: shows the new state at once, asks the
-    /// runner (`panels.toggle`), then draws its rows. A failure puts the old
-    /// state back and says why in a toast.
-    fn press_switch(&mut self, thread_id: String, panel_id: String, toggle_id: String, on: bool, cx: &mut Context<Self>) {
+    /// runner (`panels.toggle`), then draws the rows it answers with. A
+    /// failure puts the old state back and says why. A second press of the
+    /// same switch before the answer does nothing.
+    pub(crate) fn press_switch(&mut self, thread_id: String, panel_id: String, toggle_id: String, on: bool, cx: &mut Context<Self>) {
         let key = panel_key(&thread_id, &panel_id);
+        let pending = (key.clone(), toggle_id.clone());
+        if self.panels.switching.contains_key(&pending) {
+            return;
+        }
+        self.panels.switching.insert(pending.clone(), on);
         if let Some(items) = self.panels.renders.get_mut(&key).and_then(|r| r.items.as_mut()) {
             PanelItem::set_switch(items, &toggle_id, on);
         }
@@ -199,9 +235,12 @@ impl SidePane {
         cx.spawn(async move |this, cx| {
             let res = call(client, "panels.toggle", json!({ "threadId": thread_id, "panelId": panel_id, "toggleId": toggle_id, "on": on })).await;
             this.update(cx, |t, cx| {
+                t.panels.switching.remove(&pending);
                 match res {
                     Ok(v) => {
-                        t.panels.renders.insert(key, PanelRender::decode(&v));
+                        let mut render = PanelRender::decode(&v);
+                        t.keep_pressed(&key, &mut render);
+                        t.panels.renders.insert(key, render);
                     }
                     Err(e) => {
                         if let Some(items) = t.panels.renders.get_mut(&key).and_then(|r| r.items.as_mut()) {
@@ -231,7 +270,7 @@ impl SidePane {
                     crate::files::pane_note("Loading…", p).into_any_element()
                 }
                 Some(render) => match render.items.clone().filter(|i| !i.is_empty()) {
-                    Some(items) => self.render_list_panel(thread, &key, items, p, cx),
+                    Some(items) => self.render_list_panel(thread, id, items, p, cx),
                     None => {
                         let note = render.note.clone().unwrap_or_else(|| "Nothing in this list.".to_owned());
                         crate::files::pane_note(&note, p).into_any_element()
@@ -288,10 +327,11 @@ impl SidePane {
             .into_any_element()
     }
 
-    fn render_list_panel(&mut self, thread: &ThreadSummary, key: &str, items: Vec<PanelItem>, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+    fn render_list_panel(&mut self, thread: &ThreadSummary, id: &str, items: Vec<PanelItem>, p: Palette, cx: &mut Context<Self>) -> AnyElement {
         let reserves = items.iter().any(|i| i.symbol().is_some());
         let headings = PanelItem::headings(&items);
         let mut list = v_flex().py(px(8.));
+        let key = panel_key(&thread.id, id);
         for (index, item) in items.iter().enumerate() {
             if let Some(heading) = headings[index].clone() {
                 list = list.child(self.heading(crate::highlights::Heading { key: format!("panel-{index}"), title: heading, icon: None, count: None, folded: false, foldable: false, accessory: None }, p, cx));
@@ -299,8 +339,8 @@ impl SidePane {
             // A row's folded rows, opened by the link on its detail line, go
             // indented under it (`ListPanel`, PanelItem.more).
             let more = item.more().map(|m| {
-                let (panel, row) = (key.to_owned(), item.key());
-                let open = self.panels.open.get(key).is_some_and(|o| o.contains(&row));
+                let (panel, row) = (key.clone(), item.key());
+                let open = self.panels.open.get(&key).is_some_and(|o| o.contains(&row));
                 crate::highlights::MoreLink {
                     label: m.label.clone(),
                     open,
@@ -314,52 +354,45 @@ impl SidePane {
                 }
             });
             let open = more.as_ref().is_some_and(|m| m.open);
-            list = list.child(self.list_row(key, item, format!("panel-row-{index}"), reserves, false, more, thread, p, cx));
+            list = list.child(self.list_row(id, item, format!("panel-row-{index}"), reserves, false, more, thread, p, cx));
             if open {
                 for (n, child) in item.folded().iter().enumerate() {
-                    list = list.child(self.list_row(key, child, format!("panel-row-{index}-{n}"), true, true, None, thread, p, cx));
+                    list = list.child(self.list_row(id, child, format!("panel-row-{index}-{n}"), true, true, None, thread, p, cx));
                 }
             }
         }
-        div().id("list-panel").size_full().overflow_y_scroll().child(list).into_any_element()
+        let scroll = self.panels.list_scrolls.entry(id.to_owned()).or_default().clone();
+        let bar = ElementId::Name(format!("list-panel-bar-{id}").into());
+        with_scroll_bar(div().id("list-panel").overflow_y_scroll().child(list), &scroll, bar).size_full().into_any_element()
     }
 
     /// A row with a link or a file opens it the way a highlight does. A row
     /// with neither but with folded rows opens and closes them, like its link.
     #[allow(clippy::too_many_arguments)]
-    fn list_row(&mut self, key: &str, item: &PanelItem, id: String, reserves: bool, indent: bool, more: Option<crate::highlights::MoreLink>, thread: &ThreadSummary, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+    fn list_row(&mut self, panel_id: &str, item: &PanelItem, id: String, reserves: bool, indent: bool, more: Option<crate::highlights::MoreLink>, thread: &ThreadSummary, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        // Each tone has its shape (`PanelItem::symbol`) and one of the
+        // colour-blind-safe status colours (issue #67). Ready (good to go)
+        // is done's blue and blocked (waiting on someone else) warning's yellow.
         let color = match item.tone_kind() {
             Some("attention") => Some(p.needs_you),
-            Some("failed") => Some(p.failed),
-            // Green for good to go, yellow for waiting on someone else, only
-            // when a patch asks for it (ListPanel.colour).
-            Some("ready") => Some(style::ready_text(cx)),
-            Some("blocked") => Some(style::blocked_text(cx)),
+            Some("failed") => Some(p.status_failed),
+            Some("warning") | Some("blocked") => Some(p.warning),
+            Some("working") | Some("done") | Some("ready") => Some(p.progress),
             _ => None,
         };
         let toggle = more.as_ref().map(|m| m.toggle.clone());
-        // Its switch: lit at once, then the runner's rows (`panels.toggle`).
-        let switch = item.switch().map(|t| {
-            let (thread_id, panel_key, toggle_id, on) = (thread.id.clone(), key.strip_prefix(&format!("{}/", thread.id)).map(str::to_owned), t.id.clone(), !t.on);
-            crate::highlights::RowSwitch {
-                symbol: t.symbol().to_owned(),
-                on: t.on,
-                tip: t.tip(),
-                press: Rc::new(move |this: &mut SidePane, cx: &mut Context<SidePane>| {
-                    if let Some(panel_id) = panel_key.clone() {
-                        this.press_switch(thread_id.clone(), panel_id, toggle_id.clone(), on, cx);
-                    }
-                }),
-            }
-        });
+        let switch = self.row_switch(&thread.id, panel_id, item, &id);
         // A patch's detail is usually a sentence, so it gets two lines and keeps its start.
         let mut row = PaneRow::new(SharedString::from(id), item.title.clone())
             .icon_opt(item.symbol())
             .more(more)
             .tinted(color)
+            .turning(item.tone_kind() == Some("working") && item.own_icon().is_none())
             .reserves_icon(reserves)
             .trailing(item.trailing.clone())
-            .trailing_symbol(if item.tone_kind() == Some("done") && item.icon.is_some() { Some("checkmark") } else { None })
+            // A row with its own icon gets its tone's shape at the end of the
+            // line too, so the tone isn't told by the icon's colour alone.
+            .trailing_symbol(item.own_icon().and(item.tone_symbol()))
             .detail(item.detail.clone())
             .detail_lines(2)
             .switch(switch);
@@ -395,6 +428,22 @@ impl SidePane {
             row = row.on_click(move |this, _, cx| toggle(this, cx));
         }
         row.render(p, cx).into_any_element()
+    }
+
+    /// A list row's switch, if it has one: pressed, it flips at once and asks
+    /// the runner (`press_switch`).
+    fn row_switch(&self, thread_id: &str, panel_id: &str, item: &PanelItem, row_id: &str) -> Option<crate::highlights::RowSwitch> {
+        let t = item.switch()?;
+        let pending = self.panels.switching.contains_key(&(panel_key(thread_id, panel_id), t.id.clone()));
+        let (thread_id, panel_id, toggle_id, on) = (thread_id.to_owned(), panel_id.to_owned(), t.id.clone(), !t.on);
+        Some(crate::highlights::RowSwitch {
+            id: SharedString::from(format!("{row_id}-switch")),
+            symbol: t.symbol().to_owned(),
+            on: t.on,
+            pending,
+            tip: t.tip(pending),
+            press: std::rc::Rc::new(move |this: &mut SidePane, cx: &mut Context<SidePane>| this.press_switch(thread_id.clone(), panel_id.clone(), toggle_id.clone(), on, cx)),
+        })
     }
 
     /// The Patches section (`PatchesList`).
@@ -437,7 +486,7 @@ impl SidePane {
             "A patch is a file in .threadbear/patches (in the thread's folder, a parent folder, a folder of one of its projects, or ~) whose default export lists actions, panels and hooks. Ask the agent for one."
         };
         list = list.child(div().pt(px(6.)).text_size(px(style::size::SMALL)).text_color(p.faint).child(footer));
-        div().id("patches-list").size_full().overflow_y_scroll().child(list).into_any_element()
+        with_scroll_bar(div().id("patches-list").overflow_y_scroll().child(list), &self.panels.scroll, "patches-list-bar").size_full().into_any_element()
     }
 
     fn patch_row(&mut self, patch: &PatchInfo, gives: String, thread: &ThreadSummary, p: Palette, cx: &mut Context<Self>) -> AnyElement {
@@ -808,7 +857,7 @@ impl SidePane {
                             let last = sections.last_mut().expect("a section");
                             let symbol = |i: &PanelItem| i.icon.clone().filter(|i| !i.is_empty()).or_else(|| i.tone_kind().map(str::to_owned));
                             let is_open = item.more().is_some() && self.panels.open.get(&key).is_some_and(|o| o.contains(&item.key()));
-                            let mut row = json!({ "title": item.title, "trailing": item.trailing, "detail": item.detail, "symbol": symbol(item), "tone": item.tone_kind() });
+                            let mut row = json!({ "title": item.title, "trailing": item.trailing, "detail": item.detail, "symbol": symbol(item), "tone": item.tone_kind(), "mark": item.symbol(), "toneMark": item.own_icon().and(item.tone_symbol()), "switch": item.switch().map(|t| json!({ "id": t.id, "on": t.on, "symbol": t.symbol(), "pending": self.panels.switching.contains_key(&(key.clone(), t.id.clone())) })) });
                             if let Some(more) = item.more() {
                                 row["more"] = json!(more.label);
                                 row["moreOpen"] = json!(is_open);
@@ -817,7 +866,7 @@ impl SidePane {
                             rows.push(row);
                             if is_open {
                                 for child in item.folded() {
-                                    rows.push(json!({ "title": child.title, "trailing": child.trailing, "detail": child.detail, "symbol": symbol(&child), "tone": child.tone_kind(), "folded": true }));
+                                    rows.push(json!({ "title": child.title, "trailing": child.trailing, "detail": child.detail, "symbol": symbol(&child), "tone": child.tone_kind(), "mark": child.symbol(), "toneMark": child.own_icon().and(child.tone_symbol()), "switch": child.switch().map(|t| json!({ "id": t.id, "on": t.on, "symbol": t.symbol(), "pending": self.panels.switching.contains_key(&(key.clone(), t.id.clone())) })), "folded": true }));
                                 }
                             }
                             last["count"] = json!(last["count"].as_i64().unwrap_or(0) + 1);
@@ -858,6 +907,21 @@ pub(crate) fn trust_command(side: &Entity<SidePane>, thread: &ThreadSummary, cmd
     let names: Vec<String> = waiting.iter().map(|p| p.id.clone()).collect();
     side.update(cx, |pane, cx| pane.trust_patches(waiting, thread.id.clone(), cx));
     Ok(json!(format!("ok {}", names.join(" "))))
+}
+
+/// The `switch` automation command: presses the switch on the shown list
+/// panel's row with that title, as a click does.
+#[cfg(feature = "automation")]
+pub(crate) fn switch_command(side: &Entity<SidePane>, thread: &ThreadSummary, cmd: &Value, cx: &mut App) -> Result<Value, String> {
+    let title = cmd["row"].as_str().ok_or("row (a list row's title) needed")?;
+    let pane = side.read(cx);
+    let panel_id = pane.section_for(thread);
+    let key = panel_key(&thread.id, &panel_id);
+    let item = pane.panels.renders.get(&key).and_then(|r| r.items.as_ref()).and_then(|items| items.iter().find(|i| i.title == title)).ok_or_else(|| format!("no list row {title:?} in {panel_id}"))?;
+    let t = item.switch().ok_or_else(|| format!("the list row {title:?} has no switch"))?;
+    let (toggle_id, on) = (t.id.clone(), !t.on);
+    side.update(cx, |pane, cx| pane.press_switch(thread.id.clone(), panel_id, toggle_id, on, cx));
+    Ok(json!(format!("ok pressed {title}")))
 }
 
 /// The `action` automation command: runs it (Swift waits for a command to

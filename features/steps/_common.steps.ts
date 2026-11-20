@@ -104,3 +104,8 @@ When('{string} in {string} gets its turn', async function (this: ThreadbearWorld
 When('{string} has nothing left in the background', async function (this: ThreadbearWorld, title: string) {
   await this.app.do({ cmd: 'mock', method: 'background', params: { title } });
 });
+
+// The keyboard to the message box, typing nothing.
+When('I put the cursor in the composer', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'type', text: '' });
+});

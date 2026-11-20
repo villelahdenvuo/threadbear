@@ -5,17 +5,21 @@ import path from 'node:path';
 import { tmpDir } from '../helpers/fakes.ts';
 import { loadPatchSet, panelItem, readPatchModule, renderListPanel, runCommand, toggleListPanel } from '../../src/patches.ts';
 
-// A list row's switch (docs/protocol.md, Patches, "Row toggles"): the PRs
-// panel's auto-fix wand on each PR.
+// A list row's switch (docs/protocol.md, Patches, "Row toggles"): a PRs
+// panel's auto-fix wand on each PR, say. Ported from Ville
+// Lahdenvuo-Malta's fork.
 
-test('a list row keeps its toggle, on folded rows too, and drops a malformed one', () => {
+test('a list row keeps a well-formed toggle and drops a malformed one', () => {
   assert.deepEqual(panelItem({ title: 'a', toggle: { id: ' o/r#1 ', on: true, icon: ' wand.and.stars ', title: 'Auto-fix #1', extra: 1 } }), {
     title: 'a',
     toggle: { id: 'o/r#1', on: true, icon: 'wand.and.stars', title: 'Auto-fix #1' },
   });
   assert.deepEqual(panelItem({ title: 'a', toggle: { id: 'x', on: 'yes' } }), { title: 'a' });
   assert.deepEqual(panelItem({ title: 'a', toggle: { id: ' ', on: false } }), { title: 'a' });
-  assert.equal(panelItem({ title: 'a', toggle: { id: 'x'.repeat(300), on: false, title: 'y'.repeat(100) } })?.toggle?.id.length, 200);
+  assert.deepEqual(panelItem({ title: 'a', toggle: 'on' }), { title: 'a' });
+  const long = panelItem({ title: 'a', toggle: { id: 'x'.repeat(300), on: false, title: 'y'.repeat(100) } })?.toggle;
+  assert.equal(long?.id.length, 200);
+  assert.equal(long?.title?.length, 80);
   const folded = panelItem({ title: 'a', more: { label: 'More', items: [{ title: 'b', toggle: { id: 'b', on: false } }] } });
   assert.deepEqual(folded?.more?.items, [{ title: 'b', toggle: { id: 'b', on: false } }]);
 });
@@ -40,12 +44,14 @@ test('panels.toggle calls the patch toggle function and fills the panel again; r
     };
   `);
   const set = await loadPatchSet(app, home);
+  assert.equal(set.patches[0]?.error, undefined);
   const [prs, plain, slow] = set.panels;
   const ctx = { cwd: app, threadId: 't1', timeoutMs: 120_000, run: (command: string, cwd: string) => runCommand(command, { cwd, env: process.env }) };
 
   assert.deepEqual(await renderListPanel(prs!, set, ctx), { items: [{ title: '#1', toggle: { id: 'o/r#1', on: false, icon: 'wand.and.stars' } }] });
   assert.deepEqual(await toggleListPanel(prs!, set, ctx, 'o/r#1', true), { items: [{ title: '#1', toggle: { id: 'o/r#1', on: true, icon: 'wand.and.stars' } }] });
   assert.equal(fs.readFileSync(state, 'utf8'), '1');
+  assert.deepEqual(await toggleListPanel(prs!, set, ctx, 'o/r#1', false), { items: [{ title: '#1', toggle: { id: 'o/r#1', on: false, icon: 'wand.and.stars' } }] });
   await assert.rejects(toggleListPanel(prs!, set, ctx, 'o/r#9', true), /Couldn't switch it: no such PR o\/r#9/);
   await assert.rejects(toggleListPanel(slow!, set, { ...ctx, timeoutMs: 50 }, 'x', true), /took over/);
 

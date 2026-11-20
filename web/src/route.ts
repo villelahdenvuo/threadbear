@@ -4,34 +4,12 @@
 // hosting sends every unknown path to index.html, so a link works when
 // opened cold.
 import { useSyncExternalStore } from 'react';
+import { parsePath, type RailView, type Route } from './route-path';
 
-export type RailView = 'scheduled' | 'projects' | 'runners' | 'usage';
-export type Route = { page: 'list' } | { page: 'new' } | { page: 'thread'; threadId: string } | { page: 'share'; slug: string } | { page: RailView; id?: string };
-
-// A path part, or undefined for a bad escape (/t/%E0): that page is the
-// list, not a URIError that stops the whole site loading.
-function part(s: string): string | undefined {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return undefined;
-  }
-}
+export type { RailView, Route };
 
 function parse(): Route {
-  const s = location.pathname.match(/^\/s\/([^/]+)\/?$/);
-  const slug = s ? part(s[1]) : undefined;
-  if (slug !== undefined) return { page: 'share', slug };
-  const m = location.pathname.match(/^\/t\/([^/]+)\/?$/);
-  const threadId = m ? part(m[1]) : undefined;
-  if (threadId !== undefined) return { page: 'thread', threadId };
-  if (/^\/new\/?$/.test(location.pathname)) return { page: 'new' };
-  const v = location.pathname.match(/^\/(scheduled|projects|runners|usage)(?:\/([^/]+))?\/?$/);
-  if (v) {
-    const id = v[2] ? part(v[2]) : undefined;
-    return { page: v[1] as RailView, ...(id !== undefined ? { id } : {}) };
-  }
-  return { page: 'list' };
+  return parsePath(location.pathname);
 }
 
 let current = parse();
@@ -61,6 +39,11 @@ export function useRoute(): Route {
 
 export function threadPath(threadId: string): string {
   return `/t/${encodeURIComponent(threadId)}`;
+}
+
+/** A project's page: its runner and its id, as a project is only its runner's. */
+export function projectPath(runnerId: string, id: string): string {
+  return `/projects/${encodeURIComponent(runnerId)}/${encodeURIComponent(id)}`;
 }
 
 export function viewPath(view: RailView, id?: string): string {
