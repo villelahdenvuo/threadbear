@@ -54,8 +54,10 @@ done
 [[ -n "$CHECKOUT" && ( -d "$CHECKOUT/.git" || -f "$CHECKOUT/.git" ) ]] || { echo "No checkout to build from (give the repo's path)." >&2; exit 2; }
 
 # Started from the app, PATH is the bare system one: git, ssh, rsync and
-# codesign are in /usr/bin, and cargo, for a build here, in ~/.cargo/bin.
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.cargo/bin:$PATH"
+# codesign are in /usr/bin, and cargo, for a build here, in ~/.cargo/bin
+# (rustup's own install) or Homebrew's bin (a Homebrew rustup), where the
+# app's builds failed with "cargo: command not found" (20 Nov).
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 CACHE="$HOME/Library/Caches/Threadbear/update-desktop"
 SRC="$CACHE/src"
 LOCK="$CACHE/lock"
