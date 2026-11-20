@@ -56,8 +56,11 @@ done
 # Started from the app, PATH is the bare system one: git, ssh, rsync and
 # codesign are in /usr/bin, and cargo, for a build here, in ~/.cargo/bin
 # (rustup's own install) or Homebrew's bin (a Homebrew rustup), where the
-# app's builds failed with "cargo: command not found" (20 Nov).
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# app's builds failed with "cargo: command not found" (20 Nov). Homebrew's
+# bin goes on only when neither is found, so it never shadows a rustup.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.cargo/bin:$PATH"
+command -v cargo >/dev/null || command -v rustup >/dev/null ||
+  export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
 CACHE="$HOME/Library/Caches/Threadbear/update-desktop"
 SRC="$CACHE/src"
 LOCK="$CACHE/lock"
