@@ -69,6 +69,15 @@ pub(crate) struct PrPanes {
     /// links already asked about (`github.prStates`).
     states: HashMap<String, PrState>,
     asked: std::collections::HashSet<String>,
+    /// Each PR's status for Highlights' Pull requests (experiment
+    /// prHighlights), with when it came, and the PRs being asked about.
+    status: HashMap<String, (rules::PrStatus, i64)>,
+    status_asking: std::collections::HashSet<String>,
+    /// When `github.prStatus` last failed (gh missing or signed out): not
+    /// asked again for a minute.
+    status_failed_at: Option<i64>,
+    /// A redraw is booked for when the statuses showing go stale.
+    status_redraw: bool,
     /// A PR's files that came before the PR itself (`load_pr`).
     early_files: HashMap<String, PrFiles>,
     /// When each PR showing was read from GitHub, for reading it again
@@ -111,6 +120,12 @@ impl PrPanes {
 /// Whether PR links open here: the inlinePrs experiment, from `hello`.
 pub(crate) fn on(app: &crate::app::Threadbear) -> bool {
     app.remote.experiments.iter().any(|e| e == "inlinePrs")
+}
+
+/// Whether Highlights lists PRs under Pull requests with their status: the
+/// prHighlights experiment, from `hello`.
+pub(crate) fn status_on(app: &crate::app::Threadbear) -> bool {
+    app.remote.experiments.iter().any(|e| e == "prHighlights")
 }
 
 /// The canonical URL of a PR link, if it's one that opens here.
@@ -331,6 +346,73 @@ impl SidePane {
         .detach();
     }
 
+    /// The status of each PR in `urls` as last heard, asking the runner in
+    /// one `github.prStatus` for those it hasn't heard about lately
+    /// (`rules::PR_STATUS_FRESH_MS`). Called as Highlights draws, and it
+    /// books a redraw for when they go stale, so a pane left open keeps up.
+    pub(crate) fn pr_statuses(&mut self, urls: &[String], cx: &mut Context<Self>) -> HashMap<String, rules::PrStatus> {
+        let now = now_ms();
+        let canon: Vec<String> = urls.iter().filter_map(|u| pr_url(u)).collect();
+        let stale = |s: &Self, u: &String| s.prs.status.get(u).is_none_or(|(_, at)| now - at >= rules::PR_STATUS_FRESH_MS);
+        let failed_lately = self.prs.status_failed_at.is_some_and(|at| now - at < 60_000);
+        let ask: Vec<String> = canon.iter().filter(|u| stale(self, u) && !self.prs.status_asking.contains(*u)).cloned().collect();
+        if !ask.is_empty() && !failed_lately {
+            self.prs.status_asking.extend(ask.iter().cloned());
+            let client = self.client.clone();
+            cx.spawn(async move |this, cx| {
+                let answer = call(client, "github.prStatus", json!({ "urls": ask })).await;
+                this.update(cx, |this, cx| {
+                    let at = now_ms();
+                    for url in &ask {
+                        this.prs.status_asking.remove(url);
+                    }
+                    match answer {
+                        Ok(v) => {
+                            this.prs.status_failed_at = None;
+                            for url in &ask {
+                                match rules::PrStatus::decode(&v["prs"][url]) {
+                                    Some(s) => {
+                                        this.prs.status.insert(url.clone(), (s, at));
+                                    }
+                                    // GitHub didn't give it: not asked again
+                                    // until it goes stale like the rest.
+                                    None => {
+                                        if let Some(old) = this.prs.status.get_mut(url) {
+                                            old.1 = at;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(_) => this.prs.status_failed_at = Some(at),
+                    }
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
+        if !canon.is_empty() && !self.prs.status_redraw {
+            self.prs.status_redraw = true;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(std::time::Duration::from_millis(rules::PR_STATUS_FRESH_MS as u64)).await;
+                this.update(cx, |this, cx| {
+                    this.prs.status_redraw = false;
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
+        }
+        canon.into_iter().filter_map(|u| self.prs.status.get(&u).map(|(s, _)| (u, s.clone()))).collect()
+    }
+
+    /// A PR's status as last heard, asking nothing (the specs' dump).
+    #[cfg(feature = "automation")]
+    pub(crate) fn pr_status_heard(&self, url: &str) -> Option<rules::PrStatus> {
+        pr_url(url).and_then(|u| self.prs.status.get(&u).map(|(s, _)| s.clone()))
+    }
+
     /// A button's work on GitHub: busy until it lands, then the PR read again.
     fn pr_act(&mut self, url: &str, key: &'static str, params: Value, window: &mut Window, cx: &mut Context<Self>) {
         let ui = self.prs.ui.entry(url.to_owned()).or_default();
@@ -347,6 +429,8 @@ impl SidePane {
         cx.spawn_in(window, async move |this, cx| {
             let res = call(client, "github.prAct", params).await;
             this.update_in(cx, |this, window, cx| {
+                // Highlights' status asks again on its next draw.
+                this.prs.status.remove(&url);
                 let ui = this.prs.ui.entry(url.clone()).or_default();
                 ui.busy = None;
                 match res {

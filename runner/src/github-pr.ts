@@ -328,4 +328,92 @@ export async function prStates(urls: string[], gh: Gh = realGh, now = Date.now()
 /** After a merge or close, the next read of that repo's states asks again. */
 export function forgetStates(ref: PrRef): void {
   stateCache.delete(repoArg(ref).toLowerCase());
+  statusCache.delete(`${repoArg(ref).toLowerCase()}#${ref.number}`);
+}
+
+// ---- Status for Highlights' Pull requests (experiment prHighlights) ----
+// Each PR a thread has linked, made or pinned, with what decides whether it
+// can merge: CI, the review decision, a merge conflict and review threads
+// still open. Ville used a patch panel for this (~/.threadbear/patches/prs)
+// and asked on 20 Nov 2026 for it in Highlights itself. One `gh api graphql`
+// call asks for every PR at once, and an answer is kept 30 seconds, so the
+// app can ask each time Highlights draws.
+
+export type PrCi = 'passed' | 'failed' | 'pending' | '';
+export type PrStatus = {
+  title: string;
+  state: PrState;
+  ci: PrCi;
+  review: '' | 'approved' | 'changes' | 'required';
+  mergeable: 'yes' | 'conflicts' | 'unknown';
+  unresolved: number; // review threads not resolved
+  updatedAt: string;
+};
+
+const STATUS_TTL_MS = 30_000;
+// Highlights keeps 80 items; a thread rarely has more than a few PRs.
+const STATUS_MAX = 40;
+const statusCache = new Map<string, { at: number; status: PrStatus }>();
+
+const PR_FIELDS = 'title state isDraft mergeable reviewDecision updatedAt commits(last:1){nodes{commit{statusCheckRollup{state}}}} reviewThreads(first:100){nodes{isResolved}}';
+
+const CI: Record<string, PrCi> = { SUCCESS: 'passed', FAILURE: 'failed', ERROR: 'failed', PENDING: 'pending', EXPECTED: 'pending' };
+
+export function prStatusOf(v: any): PrStatus {
+  const threads: any[] = Array.isArray(v?.reviewThreads?.nodes) ? v.reviewThreads.nodes : [];
+  return {
+    title: String(v?.title ?? ''),
+    state: prState(v ?? {}),
+    ci: CI[String(v?.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? '')] ?? '',
+    review: (({ APPROVED: 'approved', CHANGES_REQUESTED: 'changes', REVIEW_REQUIRED: 'required' }) as Record<string, PrStatus['review']>)[String(v?.reviewDecision ?? '')] ?? '',
+    mergeable: v?.mergeable === 'MERGEABLE' ? 'yes' : v?.mergeable === 'CONFLICTING' ? 'conflicts' : 'unknown',
+    unresolved: threads.filter((t) => t && t.isResolved === false).length,
+    updatedAt: String(v?.updatedAt ?? ''),
+  };
+}
+
+/** Each PR's status by its URL as asked. A PR GitHub doesn't give is left out. */
+export async function prStatus(urls: string[], gh: Gh = realGh, now = Date.now()): Promise<Record<string, PrStatus>> {
+  const out: Record<string, PrStatus> = {};
+  const ask: { url: string; ref: PrRef; key: string }[] = [];
+  const seen = new Set<string>();
+  for (const url of urls.slice(0, 500)) {
+    const ref = parsePrUrl(url);
+    if (!ref) continue;
+    const key = `${repoArg(ref).toLowerCase()}#${ref.number}`;
+    const hit = statusCache.get(key);
+    if (hit && now - hit.at < STATUS_TTL_MS) out[url] = hit.status;
+    else if (!seen.has(key) && ask.length < STATUS_MAX) {
+      seen.add(key);
+      ask.push({ url, ref, key });
+    }
+  }
+  if (!ask.length) return out;
+  // parsePrUrl allows only GitHub's name characters, and JSON quoting is
+  // GraphQL's string syntax, so nothing from a link reaches the query raw.
+  const parts = ask.map(({ ref }, i) => `p${i}:repository(owner:${JSON.stringify(ref.owner)},name:${JSON.stringify(ref.repo)}){pullRequest(number:${ref.number}){${PR_FIELDS}}}`);
+  const r = await run(gh, ['api', 'graphql', '-f', `query={${parts.join(' ')}}`]);
+  let data: any;
+  try {
+    data = JSON.parse(r.stdout)?.data;
+  } catch {
+    data = undefined;
+  }
+  // A repo it can't see makes GraphQL say so for that one and still answer
+  // the rest, with gh exiting non-zero: so only nothing at all is a failure.
+  if (!data) throw new Error(failed(r.stderr));
+  ask.forEach(({ url, key }, i) => {
+    const pr = data[`p${i}`]?.pullRequest;
+    if (!pr) return;
+    const status = prStatusOf(pr);
+    statusCache.set(key, { at: now, status });
+    out[url] = status;
+  });
+  // The same PR linked two ways (".../pull/12" and ".../pull/12/files").
+  for (const u of urls.slice(0, 500)) {
+    const ref = out[u] ? undefined : parsePrUrl(u);
+    const hit = ref && statusCache.get(`${repoArg(ref).toLowerCase()}#${ref.number}`);
+    if (hit) out[u] = hit.status;
+  }
+  return out;
 }
