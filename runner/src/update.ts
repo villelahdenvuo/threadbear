@@ -24,6 +24,7 @@ import { inBackground } from './background.ts';
 import { IS_WINDOWS } from './platform.ts';
 import type { UpdateFailure } from './fix-update.ts';
 import { machineTrouble } from './machine-trouble.ts';
+import { activeTry, TRY_REF, type TryInfo } from './try-ref.ts';
 import { cleanGitError, followOrigin as fetchAndFollowOrigin, oldestMissingAt, type OriginResult } from './follow-origin.ts';
 import { LAND_TIMES_FILE } from './land-queue.ts';
 import { FETCH_TIMEOUT_MS, gitAsync as gitWithin, repoKey } from './upstream.ts';
@@ -140,6 +141,8 @@ export type UpdateDeps = {
   // followOrigin in runner.json (read every check, so setting it on a
   // machine needs no restart).
   followsOrigin?: () => boolean;
+  // Replaced in tests: the `tb try` to build in place of main (try-ref.ts).
+  tryOf?: (checkout: string) => Promise<TryInfo | undefined>;
   // Replaced in tests: bringing the clone to main, and the deploy itself.
   // sync's ref is what to build when it isn't the checkout's main.
   sync?: (checkout: string, prefix: string, dir: string, ref?: string) => Promise<MainInfo>;
@@ -225,6 +228,13 @@ export function watchMainRef(checkout: string, onChange: () => void): () => void
     }
   };
   watch(path.join(common, 'refs', 'heads'), /^main(\.lock)?$/);
+  // And `tb try` (try-ref.ts) setting or ending a try.
+  try {
+    fs.mkdirSync(path.join(common, 'refs', 'threadbear'), { recursive: true });
+  } catch {
+    // the five-minute look still finds it
+  }
+  watch(path.join(common, 'refs', 'threadbear'), /^try(\.lock)?$/);
   watch(common, /^packed-refs$/);
   return () => {
     for (const w of watchers) w.close();
@@ -774,7 +784,12 @@ export class RunnerUpdater {
         this.state = wasFailed ? 'failed' : 'idle';
         return { action: 'nothing', why: 'no origin/main to build yet' };
       }
-      const main = await (this.deps.sync ?? syncClone)(release.checkout, release.prefix, dir, origin?.ref);
+      // A `tb try` stands in for main until it lands (try-ref.ts). Not on a
+      // machine that follows GitHub's main, which lands nothing itself.
+      const trying = origin ? undefined : await (this.deps.tryOf ?? activeTry)(release.checkout).catch(() => undefined);
+      if (this.stopped) return undefined;
+      const synced = await (this.deps.sync ?? syncClone)(release.checkout, release.prefix, dir, origin?.ref ?? (trying ? TRY_REF : undefined));
+      const main = trying ? { ...synced, subject: `tb try${trying.branch ? ` of ${trying.branch}` : ''}: ${synced.subject}` } : synced;
       this.syncFailingSince = undefined;
       this.checkedAt = new Date(this.deps.clock.now()).toISOString();
       this.commit = main.commit;
@@ -829,7 +844,7 @@ export class RunnerUpdater {
       });
       if (decision.action === 'nothing') {
         log.debug('main checked', { commit: main.short, why: decision.why });
-        if (decision.why === 'up to date with main') this.through(main.commit);
+        if (decision.why === 'up to date with main' && !trying) this.through(main.commit);
         // A failure stays on show until main moves on from it.
         this.state = wasFailed && failedAlready(file?.failed, main) ? 'failed' : 'idle';
         if (!recovered && file?.failed?.machine && failedAlready(file.failed, main) && this.deps.clock.now() - Date.parse(file.failed.at) >= MACHINE_WAIT_MS) this.machineWaitOver(file.failed, main);
@@ -840,8 +855,11 @@ export class RunnerUpdater {
       this.deps.onChange?.();
       // Checks a landing here already passed at this very commit aren't run
       // again (landChecked). A lookup that fails just means they are.
+      // A try's checks run once Ville has seen it and it lands.
       const passed = this.followsOrigin
         ? undefined
+        : trying
+        ? 'a tb try: its checks run when it lands'
         : await (this.deps.landChecked ?? landChecked)(release.checkout, release.prefix, main.commit).catch(() => undefined);
       if (this.stopped) return decision;
       log.info('building a release of main', { commit: main.short, subject: main.subject, ...(passed ? { checksLeftOut: passed } : {}) });
@@ -888,6 +906,11 @@ export class RunnerUpdater {
         this.reason = result.error;
         atomicWriteFileSync(updateFilePath(home), JSON.stringify({ failed: { ...failedRecord, error: result.error } } as UpdateFile, null, 2) + '\n');
         log.error('could not build a release of main', { commit: main.short, error: result.error });
+        // A try's failure is the trying thread's to fix, not a fix thread's.
+        if (trying) {
+          this.deps.notice('warning', `The runner couldn't build the tb try of ${trying.branch ?? trying.commit.slice(0, 9)}: ${result.error}. It stays on what it runs now. The output is in ${updateLogPath(home)}.`);
+          return decision;
+        }
         this.failed(
           { kind: 'build', commit: main.commit, short: main.short, subject: main.subject, error: result.error, logFile: updateLogPath(home) },
           `The runner couldn't update to main at ${main.short} (${main.subject}): ${result.error}. The output is in ${updateLogPath(home)}.`,
@@ -896,7 +919,7 @@ export class RunnerUpdater {
       }
       this.releaseBuilt = result.id;
       this.state = 'waiting';
-      this.through(main.commit);
+      if (!trying) this.through(main.commit);
       const res = this.deps.restart({ release: result.id, reason: `Updating to main at ${main.short}: ${main.subject}`, backgroundWaitMs: BACKGROUND_WAIT_MS });
       log.info('release of main built; restart asked for', { release: result.id, commit: main.short, waitingFor: res.waitingFor });
       return decision;

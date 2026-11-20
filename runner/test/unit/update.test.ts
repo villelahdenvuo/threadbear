@@ -1185,3 +1185,43 @@ test("a build leaves its checks out when a landing passed them at that commit, a
   await follower.u.check();
   assert.deepEqual(skipped, [false]);
 });
+
+test('a tb try is built in place of main, without its checks, and its failure is only a notice', async () => {
+  const synced: (string | undefined)[] = [];
+  const skipped: (boolean | undefined)[] = [];
+  let ok = true;
+  let failedThreads = 0;
+  const h = harness({}, {
+    tryOf: async () => ({ commit: 'c9', branch: 'thread/abc' }),
+    landChecked: async () => assert.fail('a try asks no landing log'),
+    deploy: async (_dir, _home, _log, _follow, opts) => {
+      skipped.push(opts?.skipChecks);
+      return ok ? { ok: true, id: 'r-try' } : { ok: false, error: 'tsc failed' };
+    },
+    onFailed: () => {
+      failedThreads++;
+      return true;
+    },
+    sync: async (_c, _p, _d, ref) => {
+      synced.push(ref);
+      return h.main;
+    },
+  });
+  await h.u.check();
+  assert.deepEqual(synced, ['refs/threadbear/try']);
+  assert.deepEqual(skipped, [true]);
+  assert.match(h.restarts[0]!.reason, /tb try of thread\/abc/);
+  // A fresh runner (no restart pending) whose try fails to build.
+  ok = false;
+  const h2 = harness({}, {
+    tryOf: async () => ({ commit: 'c9', branch: 'thread/abc' }),
+    deploy: async () => ({ ok: false, error: 'tsc failed' }),
+    onFailed: () => {
+      failedThreads++;
+      return true;
+    },
+  });
+  await h2.u.check();
+  assert.equal(failedThreads, 0);
+  assert.match(h2.notices.at(-1) ?? '', /couldn't build the tb try of thread\/abc: tsc failed/);
+});

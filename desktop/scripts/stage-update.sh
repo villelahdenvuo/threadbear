@@ -4,9 +4,10 @@
 # (desktop/gpui/src/app_update.rs). The app runs the copy in its bundle a few
 # moments after desktop/ changes on main; it's fine to run by hand too:
 #
-#   desktop/scripts/stage-update.sh <checkout> [--next <dir>]
+#   desktop/scripts/stage-update.sh <checkout> [--next <dir>] [--ref <ref>]
 #
-# <checkout> is the repo whose main to build; --next is where the bundle goes
+# <checkout> is the repo whose main to build; --ref builds another ref of it
+# instead (the app passes refs/threadbear/try for `tb try`); --next is where the bundle goes
 # (default ~/Applications/.Threadbear GPUI.app.next). Only what's committed on
 # main is built, from a clone of its own under
 # ~/Library/Caches/Threadbear/update-desktop, so nothing an agent has in the
@@ -41,10 +42,12 @@
 set -euo pipefail
 
 CHECKOUT=""
+REF=refs/heads/main
 NEXT_DIR="$HOME/Applications/.Threadbear GPUI.app.next"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --next) NEXT_DIR="$2"; shift ;;
+    --ref) REF="$2"; shift ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     -*) echo "Unknown option: $1" >&2; exit 2 ;;
     *) CHECKOUT="$1" ;;
@@ -81,8 +84,9 @@ fi
 echo $$ >"$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
-MAIN="$(git -C "$CHECKOUT" rev-parse --verify -q refs/heads/main)" || { echo "$CHECKOUT has no main branch." >&2; exit 2; }
-echo "Staging main ($(git -C "$CHECKOUT" rev-parse --short "$MAIN")) from $CHECKOUT into $NEXT_DIR"
+[[ "$REF" == refs/* && "$REF" != *..* ]] || { echo "--ref takes a full ref name (refs/...)." >&2; exit 2; }
+MAIN="$(git -C "$CHECKOUT" rev-parse --verify -q "$REF^{commit}")" || { echo "$CHECKOUT has no $REF." >&2; exit 2; }
+echo "Staging ${REF#refs/heads/} ($(git -C "$CHECKOUT" rev-parse --short "$MAIN")) from $CHECKOUT into $NEXT_DIR"
 
 # A clone of the checkout, moved to its main: only the files that changed get
 # new times, so the build is incremental wherever it happens.
@@ -90,7 +94,7 @@ if [[ ! -d "$SRC/.git" ]]; then
   rm -rf "$SRC"
   git clone -q --no-checkout "$CHECKOUT" "$SRC"
 fi
-git -C "$SRC" fetch -q "$CHECKOUT" "refs/heads/main"
+git -C "$SRC" fetch -q "$CHECKOUT" "$REF"
 git -C "$SRC" checkout -q --detach FETCH_HEAD
 git -C "$SRC" clean -qfd -e target
 

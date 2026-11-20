@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { realPath } from './platform.ts';
+import { endTry } from './try-ref.ts';
 import type { WorktreePatch } from './patches.ts';
 import { inBackground } from './background.ts';
 import { mainCheckoutOf as linkedMainCheckout } from './patch-trust.ts';
@@ -1768,6 +1769,9 @@ async function landLocked(
     }
     // And it's main that moved, as its reflog says, not some other HEAD.
     const after = await gitOut(t.mainCheckout, ['rev-parse', `refs/heads/${MAIN}`]);
+    // A `tb try` of this branch has landed: the runner and the app follow
+    // main again (try-ref.ts).
+    if (after === checked && (await endTry(t.mainCheckout, t.branch).catch(() => false))) out(`Ended the tb try of ${t.branch}: the runner and the app follow ${MAIN} again.`);
     const logged = await gitOut(t.mainCheckout, ['reflog', '-1', '--format=%H', `refs/heads/${MAIN}`]);
     const onMain = await gitOut(t.mainCheckout, ['symbolic-ref', '-q', 'HEAD']);
     if (after !== checked || logged !== checked || onMain !== `refs/heads/${MAIN}`) {

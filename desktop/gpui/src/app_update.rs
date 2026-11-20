@@ -254,6 +254,37 @@ fn followable() -> Result<BuildInfo, String> {
     Ok(info)
 }
 
+/// `tb try` (runner/src/try-ref.ts): a thread's commit Ville wants in his
+/// app before it lands. While it's set and main doesn't have it, the app
+/// builds its desktop/ in place of main's, at once and at full speed: the
+/// two-minute goal (Ville, 20 Nov 2026) has no room for the ten quiet
+/// minutes or a background-priority build (35 minutes on 17 Nov, against 75
+/// seconds at normal priority in a landing's check).
+const TRY_REF: &str = "refs/threadbear/try";
+
+fn git_out(checkout: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new("/usr/bin/git").arg("-C").arg(checkout).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// The try's desktop/ tree, when there's a try main doesn't have yet.
+fn try_tree(checkout: &str) -> Option<String> {
+    let commit = git_out(checkout, &["rev-parse", "--verify", "-q", &format!("{TRY_REF}^{{commit}}")])?;
+    let landed = Command::new("/usr/bin/git").args(["-C", checkout, "merge-base", "--is-ancestor", &commit, "refs/heads/main"]).stdin(Stdio::null()).stderr(Stdio::null()).status().ok()?;
+    if landed.success() {
+        return None;
+    }
+    git_out(checkout, &["rev-parse", &format!("{commit}:desktop")]).filter(|t| !t.is_empty())
+}
+
+/// The desktop/ tree to follow, and whether it's a try's.
+fn wanted_tree(checkout: &str) -> Option<(String, bool)> {
+    if let Some(tree) = try_tree(checkout) {
+        return Some((tree, true));
+    }
+    main_tree(checkout).map(|t| (t, false))
+}
+
 /// Main's tree in the checkout, or none if git can't say.
 fn main_tree(checkout: &str) -> Option<String> {
     let out = Command::new("/usr/bin/git").args(rules::rev_parse_arguments(checkout)).stdin(Stdio::null()).output().ok()?;
@@ -417,7 +448,11 @@ impl Threadbear {
         if git.is_dir() {
             let mut watch = crate::file_watch::FolderWatch::new(cx, |this: &mut Threadbear, _, _, cx| this.check_for_update_soon(cx));
             if let Some(w) = watch.as_mut() {
-                w.set(&[git.join("refs").join("heads"), git].iter().map(|p| p.to_string_lossy().into_owned()).collect());
+                // And `tb try` setting or ending a try (the runner makes the
+                // folder too; a watch on one that isn't there is skipped).
+                let tries = git.join("refs").join("threadbear");
+                let _ = std::fs::create_dir_all(&tries);
+                w.set(&[git.join("refs").join("heads"), tries, git].iter().map(|p| p.to_string_lossy().into_owned()).collect());
             }
             self.updater.watch = watch;
         }
@@ -462,10 +497,10 @@ impl Threadbear {
         }
         let checkout = running.checkout.clone();
         cx.spawn(async move |this, cx| {
-            let tree = cx.background_executor().spawn(async move { main_tree(&checkout) }).await;
+            let tree = cx.background_executor().spawn(async move { wanted_tree(&checkout) }).await;
             this.update(cx, |t, cx| {
-                let Some(tree) = tree else { return };
-                let ready = t.updater.quiet_main.ready(&tree, std::time::Instant::now());
+                let Some((tree, trying)) = tree else { return };
+                let ready = trying || t.updater.quiet_main.ready(&tree, std::time::Instant::now());
                 // followMain can have changed while git was being read.
                 if t.runner_settings.as_ref().and_then(|s| s["followMain"].as_bool()) == Some(false) {
                     t.updater.settling = false;
@@ -483,7 +518,7 @@ impl Threadbear {
                     }
                     Action::Build(tree) => {
                         if ready {
-                            t.start_update_build(tree, running.checkout.clone(), cx);
+                            t.start_update_build(tree, running.checkout.clone(), trying, cx);
                         } else {
                             t.updater.settling = true;
                             t.updater.waiting_for_host = false;
@@ -499,12 +534,17 @@ impl Threadbear {
         .detach();
     }
 
-    fn start_update_build(&mut self, tree: String, checkout: String, cx: &mut Context<Self>) {
+    fn start_update_build(&mut self, tree: String, checkout: String, trying: bool, cx: &mut Context<Self>) {
         if self.updater.building.is_some() || self.updater.restarting {
             return;
         }
         let Some(script) = script() else { return };
-        let (program, arguments) = rules::build_command(&script.to_string_lossy(), &checkout, &next_dir().to_string_lossy(), efficiency_cores());
+        let (program, arguments) = if trying {
+            let next = next_dir();
+            ("/usr/bin/nice".to_owned(), ["-n", "5", "/bin/bash", &script.to_string_lossy(), &checkout, "--next", &next.to_string_lossy(), "--ref", TRY_REF].map(String::from).to_vec())
+        } else {
+            rules::build_command(&script.to_string_lossy(), &checkout, &next_dir().to_string_lossy(), efficiency_cores())
+        };
         let log = open_log();
         let (out, err) = match log.as_ref().and_then(|l| Some((l.try_clone().ok()?, l.try_clone().ok()?))) {
             Some((a, b)) => (Stdio::from(a), Stdio::from(b)),
@@ -518,7 +558,7 @@ impl Threadbear {
                 return;
             }
         };
-        note(&format!("building main (desktop/ {})", &tree[..tree.len().min(12)]));
+        note(&format!("building {} (desktop/ {})", if trying { "the tb try" } else { "main" }, &tree[..tree.len().min(12)]));
         self.updater.building = Some(tree.clone());
         self.updater.build_pid = Some(child.id());
         self.updater.waiting_for_host = false;

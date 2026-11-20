@@ -526,3 +526,20 @@ rollback covers a release that doesn't come up.
 - `deploy-runner.sh` still works as before, for a deploy that shouldn't wait
   five minutes, a branch, or a dirty build; the updater sees the release
   waiting and stays out of the way until it's running.
+
+## Trying a change before it lands (`tb try`)
+
+Run `tb try` in a thread's worktree to put the branch's last commit into the running runner and app before it lands. Only committed work goes in. The goal is about two minutes from `tb try` to the change in the app.
+
+- **Runner:** it builds the commit without its checks, which takes about a minute. It restarts once no thread is busy.
+- **App:** if `desktop/` changed, it builds the commit at normal priority, which takes about 90 seconds. The usual ten-minute wait for main to settle does not apply. It swaps in like any update.
+
+The try is the ref `refs/threadbear/try`. The file `threadbear-try.json` in the git folder says which branch it came from (`runner/src/try-ref.ts`). While the try is set, the runner and the app build it in place of main.
+
+The try ends when any of these happens:
+
+- `tb land` lands that branch.
+- Main gets the try's commit.
+- Someone runs `tb try off`.
+
+After that, both follow main again. `tb try status` says what is being tried. Approve a change after you have tried it. Then `tb land` runs the checks.

@@ -15,6 +15,7 @@ import { parseWhen as parseLater, relativeFuture } from './when.ts';
 import { DEV_HELP, formatModels, logsCommand, runDev } from './tb-dev.ts';
 import { findWorktreePatch, isInside } from './patches.ts';
 import { TRUST_ALL } from './patch-trust.ts';
+import { tryCommand } from './try-command.ts';
 import { checkoutTop, land, landTargetFromGit, realpath, type LandTarget } from './worktrees.ts';
 import { landRefusal, pushAfterLanding } from './follow-origin.ts';
 import { gateCacheDir, gh, landHold } from './land-gate.ts';
@@ -163,6 +164,10 @@ const HELP = `tb: talk to the Threadbear runner
                                   marked "# tb land: hold while red" holds the landings it
                                   would run for while it's red on main; --despite-red
                                   lands anyway, for the fix
+  tb try [off|status]             in a thread's worktree of Threadbear: put its last commit in
+                                  the running runner and app in place of main, before it lands
+                                  (about 2 minutes; checks run at tb land). Landing it, or
+                                  tb try off, goes back to main
   tb queued <id> --what <job> --behind <what> [--pid <pid>] | tb queued <id> --done
                                   from a thread's job: it's waiting for its turn on a lock, or
                                   has it now; the app says Queued meanwhile. Does nothing
@@ -233,6 +238,7 @@ const COMMAND_FLAGS: Record<string, string[]> = {
   rpc: [],
   queued: ['what', 'behind', 'pid', 'done'],
   land: ['dry-run', 'despite-red'],
+  try: [],
   runner: ['ssh', 'out', 'id', 'json', 'finish', 'replace', 'drop', 'snapshot', 'keys-checked', 'lock-out', 'purge'],
 };
 
@@ -298,6 +304,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === 'activity') return activityCommand(cfg, values);
   // Works with no runner too: from any thread/ worktree, by git alone.
   if (cmd === 'queued') return queuedCommand(cfg, args[0], values);
+  if (cmd === 'try') return tryCommand(args);
   // In a process of its own, which a time limit stopping this tb can't
   // reach once its check has started (land-detach.ts).
   if (cmd === 'land') {
