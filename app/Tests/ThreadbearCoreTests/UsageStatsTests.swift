@@ -136,6 +136,24 @@ final class UsageStatsTests: XCTestCase {
         XCTAssertEqual(LimitPace.of(window, samples: recent, now: now)!.rate, 15, accuracy: 0.01)
     }
 
+    func testAWeekJustResetGoesByTheWeekBefore() {
+        // Two hours after the reset with 5% gone: 60% a day, out on day
+        // two. The week before used 70% in its 7 days: 10% a day.
+        let now = at(12)
+        let window = weekly(95, resets: now.addingTimeInterval(7 * 86400 - 2 * 3600))
+        let start = now.addingTimeInterval(-2 * 3600)
+        let samples = [LimitSample(at: start.addingTimeInterval(-3 * 86400), remainingPercent: 60),
+                       LimitSample(at: start.addingTimeInterval(-60), remainingPercent: 30),
+                       LimitSample(at: start.addingTimeInterval(3600), remainingPercent: 97)]
+        let pace = LimitPace.of(window, samples: samples, now: now)!
+        XCTAssertEqual(pace.rate, 10, accuracy: 0.01)
+        XCTAssertNil(pace.runsOutAt)
+        // No week before: too early to say, so just when it resets.
+        XCTAssertNil(LimitPace.of(window, samples: [], now: now))
+        let verdict = LimitPace.verdict(window, pace: nil, stale: false, now: now, calendar: calendar)!
+        XCTAssertEqual(verdict.tone, .fine)
+    }
+
     func testFablesOwnWeekGoesLikeAWeekButNeverSaysGoingSpare() {
         // Three and a half days in, 30% of Fable's week left: 20% a day,
         // out in 1.5 days, as the main week would be.
