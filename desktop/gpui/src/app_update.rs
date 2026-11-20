@@ -55,6 +55,10 @@ pub(crate) struct AppUpdater {
     /// again until main moves on).
     pub(crate) building: Option<String>,
     pub(crate) failed: Option<String>,
+    /// What the failed build's log ends with, for the Updates panel.
+    pub(crate) failed_reason: Option<String>,
+    /// Try Again was pressed: the next look builds at once, with no quiet wait.
+    retry_now: bool,
     quiet_main: rules::BuildDebounce,
     settling: bool,
     /// The last build found no Mac to build on; the next look tries again.
@@ -288,6 +292,44 @@ fn wanted_tree(checkout: &str) -> Option<(String, bool)> {
     main_tree(checkout).map(|t| (t, false))
 }
 
+/// The line of the update log that says why the last build failed: the last
+/// error-looking line of its last 64 KB, or else its last line of output
+/// (the app's own notes, which start with a time, left out), without the
+/// terminal's colours.
+fn failure_reason() -> Option<String> {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let mut f = std::fs::File::open(log_path()).ok()?;
+    let len = f.metadata().ok()?.len();
+    f.seek(SeekFrom::Start(len.saturating_sub(64 * 1024))).ok()?;
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<String> = text.lines().map(strip_ansi).map(|l| l.trim().to_owned()).filter(|l| !l.is_empty() && !l.starts_with("[20")).collect();
+    let tail = &lines[lines.len().saturating_sub(40)..];
+    let error = |l: &&String| l.starts_with("error") || l.contains("command not found") || l.starts_with("fatal:") || l.contains("No such file");
+    let line = tail.iter().rev().find(error).or(tail.last())?;
+    // "…/stage-update.sh: line 236: cargo: command not found" reads as its end.
+    let line = line.rsplit_once(": line ").and_then(|(_, rest)| rest.split_once(": ")).map_or(line.as_str(), |(_, why)| why);
+    Some(line.chars().take(200).collect())
+}
+
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Main's tree in the checkout, or none if git can't say.
 fn main_tree(checkout: &str) -> Option<String> {
     let out = Command::new("/usr/bin/git").args(rules::rev_parse_arguments(checkout)).stdin(Stdio::null()).output().ok()?;
@@ -503,7 +545,7 @@ impl Threadbear {
             let tree = cx.background_executor().spawn(async move { wanted_tree(&checkout) }).await;
             this.update(cx, |t, cx| {
                 let Some((tree, trying)) = tree else { return };
-                let ready = trying || t.updater.quiet_main.ready(&tree, std::time::Instant::now());
+                let ready = trying || t.updater.retry_now || t.updater.quiet_main.ready(&tree, std::time::Instant::now());
                 // followMain can have changed while git was being read.
                 if t.runner_settings.as_ref().and_then(|s| s["followMain"].as_bool()) == Some(false) {
                     t.updater.settling = false;
@@ -562,6 +604,7 @@ impl Threadbear {
         };
         note(&format!("building {} (desktop/ {})", if trying { "the tb try" } else { "main" }, &tree[..tree.len().min(12)]));
         self.updater.building = Some(tree.clone());
+        self.updater.retry_now = false;
         self.updater.build_pid = Some(child.id());
         self.updater.waiting_for_host = false;
         cx.spawn(async move |this, cx| {
@@ -569,6 +612,16 @@ impl Threadbear {
             this.update(cx, |t, cx| t.update_build_finished(tree, status, cx)).ok();
         })
         .detach();
+        cx.notify();
+    }
+
+    /// Updates' Try Again: forget the failure and build now.
+    pub(crate) fn retry_update(&mut self, cx: &mut Context<Self>) {
+        self.updater.failed = None;
+        self.updater.failed_reason = None;
+        self.updater.retry_now = true;
+        note("Try Again: building again now");
+        self.check_for_update(cx);
         cx.notify();
     }
 
@@ -586,6 +639,7 @@ impl Threadbear {
                     note(&format!("{} is staged; it goes in when the app quits or is opened again", info.short));
                     self.updater.staged = Some(info);
                     self.updater.failed = None;
+                    self.updater.failed_reason = None;
                     // The next of the once-a-second looks weighs restarting
                     // into it, with what the windows have up.
                     self.menus_stale = true;
@@ -600,7 +654,8 @@ impl Threadbear {
             Some(3) => {}
             _ => {
                 // Not tried again until main moves on or the app is opened again.
-                note(&format!("the update build failed ({status:?}); not tried again until main moves on"));
+                self.updater.failed_reason = failure_reason();
+                note(&format!("the update build failed ({status:?}); not tried again until main moves on or Try Again in Updates"));
                 self.updater.failed = Some(tree);
             }
         }
@@ -976,6 +1031,7 @@ impl Threadbear {
             building: u.building.is_some(),
             settling: u.settling && self.runner_settings.as_ref().and_then(|s| s["followMain"].as_bool()) != Some(false),
             failed: u.failed.is_some() && u.staged.is_none(),
+            failed_reason: u.failed_reason.clone().filter(|_| u.failed.is_some()),
             waiting: u.waiting_for_host && u.staged.is_none() && u.building.is_none(),
             // Only the installed app's reasons: every other launch is meant
             // not to. No builder is only ever set by an installed app's build
@@ -998,6 +1054,7 @@ impl Threadbear {
         u.building = (state == "building").then(|| "def5678".to_owned());
         u.settling = state == "settling";
         u.failed = (state == "failed").then(|| "def5678".to_owned());
+        u.failed_reason = (state == "failed").then(|| "cargo: command not found".to_owned());
         u.waiting_for_host = state == "waiting";
         u.no_builder = state == "no-builder";
         // A scripted app never follows main, so its looks start here: what

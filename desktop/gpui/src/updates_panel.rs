@@ -481,10 +481,10 @@ impl Threadbear {
                 t.restart_to_update(cx);
             })),
             // Not while a newer main builds: the line is about that.
-            None if side.failed && !side.building => Some(push_button("updates-popover-log", "Show the Log", "Open the update build's log, to see why it failed", false, false, cx, |t, _, cx| {
+            // The line says why; the panel has the log.
+            None if side.failed && !side.building => Some(push_button("updates-popover-retry", "Try Again", "Build the app from main again now", false, false, cx, |t, _, cx| {
                 t.updates_panel.popover = false;
-                cx.notify();
-                crate::open_gate::open_own(&crate::app_update::log_path(), cx);
+                t.retry_update(cx);
             })),
             None => None,
         };
@@ -540,7 +540,13 @@ impl Threadbear {
         if side.staged.is_some() {
             out.push(h_flex().child(push_button("updates-restart", "Restart to Update", "Quit and reopen on the new version. Running threads carry on in the runner.", false, false, cx, |t, _, cx| t.restart_to_update(cx))).into_any_element());
         } else if side.failed {
-            out.push(h_flex().child(push_button("updates-log", "Show the Log", "Open the update build's log, to see why it failed", false, false, cx, |_, _, cx| crate::open_gate::open_own(&crate::app_update::log_path(), cx))).into_any_element());
+            out.push(
+                h_flex()
+                    .gap(px(6.))
+                    .child(push_button("updates-retry", "Try Again", "Build the app from main again now", false, false, cx, |t, _, cx| t.retry_update(cx)))
+                    .child(push_button("updates-log", "Show the Log", "Open the update build's log", false, false, cx, |_, _, cx| crate::open_gate::open_own(&crate::app_update::log_path(), cx)))
+                    .into_any_element(),
+            );
         }
         out
     }

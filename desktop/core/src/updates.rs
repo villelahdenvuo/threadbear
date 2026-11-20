@@ -370,6 +370,9 @@ pub struct AppSide {
     /// Main changed recently; let nearby desktop changes settle first.
     pub settling: bool,
     pub failed: bool,
+    /// The failed build's last words from its log ("cargo: command not
+    /// found"), said in the panel so nobody has to open the log to know.
+    pub failed_reason: Option<String>,
     /// The GPUI app's build found no Mac to build on, and tries again at its
     /// next look (the Swift app builds where it is, so never).
     pub waiting: bool,
@@ -469,11 +472,15 @@ pub fn icon_tooltip(app: &AppSide, runner: Option<&RunnerUpdates>, clis: &[CliSt
 /// waits on his Reinstall now, or whose reinstall failed,
 /// a release of his to bring in (they only come in when he says), a
 /// machine that isn't following GitHub's main, or an installed GPUI app that
-/// can't follow main until it's installed again. Anything else sorts itself
-/// out, a failed build included, so it gets the grey dot (27 Oct, Mike: "the
-/// blue dot usually indicates there's something for me to action").
+/// can't follow main until it's installed again, or whose last build failed.
+/// Anything else sorts itself out, so it gets the grey dot (27 Oct, Mike:
+/// "the blue dot usually indicates there's something for me to action").
+/// The app's failed build doesn't: it isn't tried again until main moves,
+/// and on 20 Nov 2026 Ville's app failed every build for a day on a missing
+/// cargo with nothing to say so but a grey dot (Ville: "just an update that
+/// never arrives and leaves me wondering").
 pub fn needs_you(app: &AppSide, runner: Option<&RunnerUpdates>) -> bool {
-    app.not_following.is_some() || runner.is_some_and(launcher_needs_you) || from_mike(runner) || not_following(runner)
+    (app.failed && !app.is_pending()) || app.not_following.is_some() || runner.is_some_and(launcher_needs_you) || from_mike(runner) || not_following(runner)
 }
 
 /// What the icon itself shows of the next version, so a glance says it
@@ -779,7 +786,10 @@ pub fn app_line(a: &AppSide) -> String {
         return "The app has a new version on main, waiting for ten quiet minutes before building.".to_owned();
     }
     if a.failed {
-        return "The app's last build from main failed. The log says why.".to_owned();
+        return match &a.failed_reason {
+            Some(why) => format!("The app's last build from main failed: {why}"),
+            None => "The app's last build from main failed. The log says why.".to_owned(),
+        };
     }
     if let Some(why) = &a.not_following {
         return format!("The app isn't following main: {why}.");
@@ -796,7 +806,7 @@ pub fn popover_line(a: &AppSide) -> String {
         return "Building the app's next version.".to_owned();
     }
     if a.failed {
-        return "The app's last build failed.".to_owned();
+        return a.failed_reason.as_ref().map_or_else(|| "The app's last build failed.".to_owned(), |why| format!("The app's last build failed: {why}"));
     }
     app_line(a)
 }
@@ -1341,6 +1351,19 @@ mod tests {
         let waiting = AppSide { running: Some("abc1234".into()), waiting: true, ..Default::default() };
         assert!(shown(&waiting, None) && !needs_you(&waiting, None));
         assert_eq!(app_line(&waiting), "The app has a new version on main, waiting for a Mac to build it on.");
+    }
+
+    // A failed app build isn't tried again until main moves: it wants
+    // whoever runs the app, and says why (20 Nov 2026).
+    #[test]
+    fn a_failed_app_build_wants_you_and_says_why() {
+        let failed = AppSide { failed: true, failed_reason: Some("cargo: command not found".into()), ..Default::default() };
+        assert!(needs_you(&failed, None));
+        assert_eq!(app_line(&failed), "The app's last build from main failed: cargo: command not found");
+        let building_again = AppSide { building: true, ..failed.clone() };
+        assert!(!needs_you(&building_again, None), "not while the next build runs");
+        let unexplained = AppSide { failed: true, ..Default::default() };
+        assert_eq!(app_line(&unexplained), "The app's last build from main failed. The log says why.");
     }
 
     #[test]
