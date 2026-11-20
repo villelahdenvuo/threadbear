@@ -91,6 +91,7 @@ export const THREAD_METHODS = new Set([
   'threads.heldBody',
   'threads.markSeen',
   'threads.highlights',
+  'prWatch.set',
   'threads.commands',
   'threads.contextUsage',
   'threads.explain',
