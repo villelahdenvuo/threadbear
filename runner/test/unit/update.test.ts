@@ -188,6 +188,8 @@ function harness(releaseExtra: Partial<ReleaseJson> = {}, depsExtra: Partial<Upd
     // Nor the health of the machine they happen to run on.
     machineTrouble: () => undefined,
     sync: async () => h.main,
+    // No `tb try` unless a test sets one (the real lookup runs git).
+    tryOf: async () => undefined,
     deployBackend: async (_repo, _runnerDir, _home, commit) => {
       h.backendDeploys.push(commit);
       return h.backendResult;
@@ -715,6 +717,8 @@ test('a machine that stays sick goes to a fix thread after a while, once, so a r
   await h.u.check();
   assert.equal(failures.length, 0, 'not yet');
   h.clock.advance(60_000);
+  // The five-minute look the advance fired runs too: let it finish first.
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
   await h.u.check();
   assert.equal(failures.length, 1);
   assert.match(failures[0]!.error, /no file watches left \(EMFILE\) for 6 hours? since/);

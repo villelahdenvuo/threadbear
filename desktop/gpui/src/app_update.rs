@@ -260,16 +260,21 @@ fn followable() -> Result<BuildInfo, String> {
 /// (Ville, 20 Nov 2026) has no room for the ten quiet minutes.
 const TRY_REF: &str = "refs/threadbear/try";
 
-fn git_out(checkout: &str, args: &[&str]) -> Option<String> {
+/// Whether git succeeded in the checkout, and what it printed.
+fn git_run(checkout: &str, args: &[&str]) -> Option<(bool, String)> {
     let out = Command::new("/usr/bin/git").arg("-C").arg(checkout).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    Some((out.status.success(), String::from_utf8_lossy(&out.stdout).trim().to_owned()))
+}
+
+fn git_out(checkout: &str, args: &[&str]) -> Option<String> {
+    git_run(checkout, args).and_then(|(ok, out)| ok.then_some(out))
 }
 
 /// The try's desktop/ tree, when there's a try main doesn't have yet.
 fn try_tree(checkout: &str) -> Option<String> {
     let commit = git_out(checkout, &["rev-parse", "--verify", "-q", &format!("{TRY_REF}^{{commit}}")])?;
-    let landed = Command::new("/usr/bin/git").args(["-C", checkout, "merge-base", "--is-ancestor", &commit, "refs/heads/main"]).stdin(Stdio::null()).stderr(Stdio::null()).status().ok()?;
-    if landed.success() {
+    let (landed, _) = git_run(checkout, &["merge-base", "--is-ancestor", &commit, "refs/heads/main"])?;
+    if landed {
         return None;
     }
     git_out(checkout, &["rev-parse", &format!("{commit}:desktop")]).filter(|t| !t.is_empty())
