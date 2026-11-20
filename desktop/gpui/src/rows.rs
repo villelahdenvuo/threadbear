@@ -28,7 +28,7 @@ use crate::style::px;
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
 use threadbear_core::reducer::{
-    cost_text, duration, short_tokens, AgentHeader, Pending, PlanEntry, PlanStatus, PlanSummary, Row, RowContent, TextItem, TurnCompletion, TurnErrorKind, TurnOutcome, TurnTokens, UserMessage,
+    cost_text, duration, short_tokens, AgentHeader, MoveIcon, MoveNote, Pending, PlanEntry, PlanStatus, PlanSummary, Row, RowContent, TextItem, TurnCompletion, TurnErrorKind, TurnOutcome, TurnTokens, UserMessage,
 };
 
 /// A `thread:` link was clicked: the app opens that thread.
@@ -209,6 +209,7 @@ impl ThreadPane {
             RowContent::Asks(asks) => self.asks_row(ix, asks, cx),
             RowContent::Note(note) if row.in_group => self.grouped_note_row(ix, &row, note, cx),
             RowContent::Note(note) => self.note_row(&row, note, cx),
+            RowContent::Move(note) => self.move_row(&row, note, cx),
             RowContent::Error { message, kind } => self.error_row(message, *kind, cx),
             RowContent::Group(group) => self.group_row(ix, &row, group, cx),
             RowContent::Working(status) => self.working_row(status.started_at, window, cx),
@@ -532,6 +533,38 @@ impl ThreadPane {
         // note (the same-work one naming several threads) never wrapped and
         // ran off both sides of the window (13 Nov).
         let content = div().py(px(ROW_TOP)).w_full().text_size(px(size::SMALL)).line_height(px(17.)).text_color(quiet).text_center().child(note.to_owned());
+        row_wrap(row, content)
+    }
+
+    /// A thread moving between the inbox, hibernating and the archive: a
+    /// line across the column with an icon, the runner's words and when,
+    /// so it's clear when it went away and what brought it back (Ville
+    /// picked this divider over a note with the time and a pill, 20 Nov).
+    /// Hover for the full date.
+    fn move_row(&mut self, row: &Row, note: &MoveNote, cx: &mut Context<Self>) -> AnyElement {
+        let (quiet, faint, line) = (style::quiet_text(cx), style::faint_text(cx), style::hairline(cx));
+        let symbol = match note.icon() {
+            MoveIcon::Hibernate => "moon",
+            MoveIcon::Wake => "sun.max",
+            MoveIcon::Archive => "archivebox",
+            MoveIcon::Inbox => "tray",
+        };
+        let tz = threadbear_core::chrono::Local;
+        let when = note.when(&tz);
+        let rule = || div().flex_1().min_w(px(16.)).h(px(1.)).bg(line);
+        let words = h_flex()
+            .id(SharedString::from(format!("move-{}", row.id)))
+            .flex_shrink()
+            .min_w_0()
+            .gap(px(5.))
+            .items_center()
+            .text_size(px(size::SMALL))
+            .line_height(px(17.))
+            .child(crate::icons::symbol(symbol).size(px(12.)).text_color(quiet))
+            .child(div().min_w_0().text_color(quiet).child(note.text.trim_end_matches('.').to_owned()))
+            .when(!when.is_empty(), |d| d.child(div().flex_none().ml(px(3.)).text_color(faint).child(when)))
+            .tip(note.full_when(&tz));
+        let content = h_flex().py(px(ROW_TOP + 4.)).w_full().gap(px(10.)).items_center().child(rule()).child(words).child(rule());
         row_wrap(row, content)
     }
 

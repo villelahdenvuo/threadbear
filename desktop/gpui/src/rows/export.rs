@@ -4,7 +4,7 @@ use super::metrics::*;
 use crate::thread::ThreadPane;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::*;
-use threadbear_core::reducer::{cost_text, duration, ApprovalDecision, DiffHunk, Event, EventsPage, PlanCardState, PlanStatus, Row, RowContent, RowKind, TranscriptModel, TurnOutcome};
+use threadbear_core::reducer::{cost_text, duration, ApprovalDecision, DiffHunk, Event, EventsPage, MoveNote, PlanCardState, PlanStatus, Row, RowContent, RowKind, TranscriptModel, TurnOutcome};
 
 /// The row's own content, for "Copy message". None for rows with nothing to
 /// copy (the working line, the background line).
@@ -87,7 +87,7 @@ pub(crate) fn message_text(row: &Row) -> Option<String> {
             }
             format!("{text}_")
         }
-        RowContent::Note(text) => format!("_{text}_"),
+        RowContent::Note(text) | RowContent::Move(MoveNote { text, .. }) => format!("_{text}_"),
         RowContent::Error { message, .. } => format!("**Error**: {message}"),
         RowContent::Group(group) => format!("_{}_", group.summary),
         RowContent::Working(_) | RowContent::Background(_) => return None,

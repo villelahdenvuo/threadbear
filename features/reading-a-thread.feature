@@ -104,3 +104,11 @@ Feature: Reading a thread
     And another Mac's thread with a bash block is open in a panel of its own
     Then that panel's block has its copy icon and no play icon
     And a block in another of this Mac's threads open in a panel of its own has no play icon either
+
+  # The Swift app is frozen, so only the GPUI app draws these.
+  @transcript.moves @swift-pending
+  Scenario: A thread that went away says when, and who moved it
+    When I open the thread "Make uploads resume after a crash"
+    And I hibernate the thread "Make uploads resume after a crash" for 1 second
+    Then the transcript has a line across it saying "Hibernated by you until"
+    And the transcript has a line across it saying "Woke up from hibernating"

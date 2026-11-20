@@ -58,7 +58,7 @@ export const quietInboxPart = {
       // waitFor would have, and wakes with what they said. No longer
       // finished itself, for anything waiting on it in turn.
       delete rec.finished;
-      this.waitOn(st, waits, undefined);
+      this.waitOn(st, waits, undefined, undefined, 'threadbear');
       // So its wake says the runner put it away, not the agent (deliverWaits).
       for (const w of rec.waitingOn ?? []) w.quiet = true;
       this.markDirty(st);
@@ -68,8 +68,7 @@ export const quietInboxPart = {
     // A check-in it booked brings it back by itself; it goes after that run.
     if (open.length || ends.some((e) => e.kind === 'scheduled')) return;
     if (!this.helperNobodyTouched(st) || next) return;
-    this.emit(st, { type: 'system.note', text: HELPER_ARCHIVED_NOTE });
-    this.update({ threadId: rec.id, archived: true, archivedBy: 'threadbear' });
+    this.update({ threadId: rec.id, archived: true, archivedBy: 'threadbear', moveNote: { text: HELPER_ARCHIVED_NOTE } });
     this.log.info('quiet inbox: archived a finished helper thread', { threadId: rec.id, startedBy: rec.startedBy?.threadId });
   },
 

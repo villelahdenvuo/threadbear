@@ -4,7 +4,7 @@
 // is the Runner; runner.ts puts them on its prototype.
 import type { Runner } from '../runner.ts';
 import type { RunnerPart } from './part.ts';
-import type { ThreadSummary } from '../protocol.ts';
+import type { MoveBy, ThreadSummary } from '../protocol.ts';
 import { ErrorCode, RpcError } from '../protocol.ts';
 import { SAID_MAX, WAKE_SYSTEM, awayFor, hibernateNote, localWhen, readWakeAnswer, wakePrompt } from '../wake-when.ts';
 import type { ThreadState } from '../runner.ts';
@@ -52,7 +52,8 @@ export const hibernationPart = {
     const gist = this.threadGist(st.rec.id, { recent: 0 });
     const by = params.by === 'agent' ? ('agent' as const) : undefined;
     const input = { said, now: this.clock.now(), timeZone, title: st.rec.title, first: gist.first, brief: st.rec.brief?.text, ...(by ? { by } : {}) };
-    this.update({ threadId: st.rec.id, snoozedUntil: NO_WAKE_TIME });
+    const from = this.place(st.rec);
+    this.update({ threadId: st.rec.id, snoozedUntil: NO_WAKE_TIME, moveNote: false });
     st.rec.wakeWhen = { said, pending: true };
     this.markDirty(st);
     const ask = (withThread: boolean) =>
@@ -85,7 +86,8 @@ export const hibernationPart = {
     st.rec.wakeWhen = { said, ...(answer.topic ? { topic: answer.topic } : {}), ...(by ? { by } : {}) };
     // What it already checked counts only for the same words, from its agent.
     if (st.rec.wakeChecked && (!by || st.rec.wakeChecked.said !== said)) delete st.rec.wakeChecked;
-    this.emit(st, { type: 'system.note', text: hibernateNote(answer, said, timeZone, by) });
+    const until = answer.until ? { until: answer.until } : {};
+    this.emit(st, { type: 'system.note', text: hibernateNote(answer, said, timeZone, by), move: { from, to: 'hibernating', by: by ?? 'mike', ...until } });
     this.armSnoozeTimer();
     this.log.info('hibernated in words', { threadId: st.rec.id, until: answer.until, topic: answer.topic });
     return { thread: this.summary(st), ...answer };
@@ -154,7 +156,9 @@ export const hibernationPart = {
   // waiting on another's report could only end as done, in the inbox.
   // `askedBy`: its access when its agent asked to wait (end_turn), if it
   // has more now, as `by` is the less of the two.
-  waitOn(this: Runner, st: ThreadState, waits: WaitFor[], when: string | undefined, askedBy?: Authority): void {
+  // `movedBy`: who the move in the transcript names (Threadbear for a
+  // review or a quiet inbox's wait).
+  waitOn(this: Runner, st: ThreadState, waits: WaitFor[], when: string | undefined, askedBy?: Authority, movedBy: MoveBy = 'agent'): void {
     const { rec } = st;
     const list: { threadId: string; title: string; until?: string }[] = [];
     const skipped: string[] = [];
@@ -188,13 +192,14 @@ export const hibernationPart = {
       }
     }
     if (!until || Date.parse(until) <= now) until = new Date(now + WAIT_FOR_DEFAULT_MS).toISOString();
-    this.update({ threadId: rec.id, snoozedUntil: until });
+    const from = this.place(rec);
+    this.update({ threadId: rec.id, snoozedUntil: until, moveNote: false });
     const by = leastAuthority(askedBy, this.authorityNow(rec.id));
     rec.waitingOn = list.map((x) => ({ ...x, by }));
     this.markDirty(st);
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const also = skipped.length ? ` (${skipped.join(', ')} isn't a thread here that's still going, so it isn't waited on.)` : '';
-    this.emit(st, { type: 'system.note', text: `Hibernating until ${waitsLine(list)}, or ${localWhen(Date.parse(until), timeZone)} at the latest.${also}` });
+    this.emit(st, { type: 'system.note', text: `Hibernating until ${waitsLine(list)}, or ${localWhen(Date.parse(until), timeZone)} at the latest.${also}`, move: { from, to: 'hibernating', by: movedBy, until } });
     // One may have finished already (while this turn was ending, or before
     // it with nothing new since): it wakes now with that reply.
     this.reconcileWaits();
@@ -206,7 +211,7 @@ export const hibernationPart = {
   // A review of this thread's change has started (runner/lab-review.ts):
   // it hibernates until the review finishes, as end_turn's waitFor would.
   waitOnReview(this: Runner, st: ThreadState, reviewId: string): void {
-    this.waitOn(st, [{ id: reviewId }], undefined);
+    this.waitOn(st, [{ id: reviewId }], undefined, undefined, 'threadbear');
     const w = st.rec.waitingOn?.find((x) => x.threadId === reviewId);
     if (w) {
       w.review = true;
@@ -484,7 +489,7 @@ export const hibernationPart = {
         ? `Woke up${away}, as the runner restarted.`
         : away ? `Woke up after hibernating for ${awayFor(ms)}.` : 'Woke up from hibernating.';
     // Starting "Woke up" is what gives it the bear in the app (RowContent.isWakeNote).
-    this.emit(st, { type: 'system.note', text });
+    this.emit(st, { type: 'system.note', text, move: { from: 'hibernating', to: 'inbox', by: 'threadbear' } });
     rec.woke = { at: new Date(now).toISOString(), ...(since ? { since } : {}) };
     this.endHibernation(st);
     st.rec.forceUnread = true;

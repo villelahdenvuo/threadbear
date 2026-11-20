@@ -478,6 +478,9 @@ pub enum RowContent {
     /// The asks a finished turn left for Mike, under its footer.
     Asks(AsksCard),
     Note(String),
+    /// A move between the inbox, hibernating and the archive: a divider
+    /// with the time, never folded into the work.
+    Move(MoveNote),
     /// A failed turn's message, and why it failed when the runner said.
     Error { message: String, kind: Option<TurnErrorKind> },
     Group(WorkGroup),
@@ -517,7 +520,7 @@ impl RowContent {
             RowContent::PlanCard(_) => RowKind::PlanCard,
             RowContent::Footer(_) => RowKind::Footer,
             RowContent::Asks(_) => RowKind::Asks,
-            RowContent::Note(_) => RowKind::Note,
+            RowContent::Note(_) | RowContent::Move(_) => RowKind::Note,
             RowContent::Error { .. } => RowKind::Error,
             RowContent::Group(_) => RowKind::Group,
             RowContent::Working(_) => RowKind::Working,

@@ -89,6 +89,23 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    // Ville, 20 Nov: a thread back in the inbox said nothing about having
+    // been away, or who brought it back. Each move leaves a line, which
+    // the Mac draws as a divider with the time and the others as a note.
+    name: 'a thread hibernated, woken by a message, archived and brought back',
+    shows: ['Woke up for your message.', 'Archived by you.', 'Unarchived by you.'],
+    play: (p) => {
+      p.say('Done for now.');
+      p.endTurn({ needs: 'nothing' });
+      p.move({ snoozedUntil: '2099-01-05T09:00:00.000Z' });
+      p.send('Any news?');
+      p.say('Nothing yet.');
+      p.endTurn({ needs: 'nothing' });
+      p.move({ archived: true });
+      p.move({ archived: false });
+    },
+  },
+  {
     name: 'a decision card, with what each answer does and a pick',
     shows: ['Same thread or new?', 'One thread that moves', 'The old one is archived'],
     play: (p) => {

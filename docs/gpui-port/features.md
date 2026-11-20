@@ -182,6 +182,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `transcript.working` | Working line | Bear plus elapsed time | The paw and elapsed time (`rows/work.rs` `working_paw`): Mike passed over the bear on 13 Nov and asked for the paw to move instead, picking one of five at random every 2.4 s (flip, spin, knead, wave, pawprints; core's `juice::paw_pose`). Still under Reduce Motion. | build | M | `Cells` (`WorkingRowCell`), `WavingBearView` |
 | `transcript.background` | Background line | N sub-agents or jobs still going | Drawn. | build | S | `Cells` (`BackgroundRowCell`), `BackgroundWork` |
 | `transcript.gap` | Gap divider | "6 min later · X finished" | Drawn. | build | S | `Cells` (`GapRowCell`) |
+| `transcript.moves` | Move divider | A line across the transcript when a thread is hibernated, wakes, is archived or comes back: icon, who did it, date and time. GPUI only (Ville, 20 Nov 2026) | Drawn. | build | S | none |
 | `transcript.changes` | Changes card | Edited N files, each opens its diff | Drawn card. | build | M | `Cells` (`ChangesRowCell`), `RowRenderer` (`changesRender`) |
 | `transcript.rowmenu` | Row context menu | Copy message, Expand or Collapse, Copy transcript, Copy debug info | gpui-kit menu with GPUI's clipboard. | kit | S | `TranscriptController`, `MarkdownExport`, `RowDebug` |
 | `transcript.lightup` | Step light-up | Work link opens its group, scrolls, accent rail fades out | Scroll to the row, then fade a drawn rail with `Animation`. | build | S | `TranscriptController` (`light`) |
