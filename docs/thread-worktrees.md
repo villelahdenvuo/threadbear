@@ -479,7 +479,12 @@ another thread's cherry-pick). Otherwise both stay, with a `system.note`
 saying so and how to land or drop them. Once a day (and 10 minutes after
 the runner starts), archived threads whose worktree stayed get the cleanup
 again, so one whose work has landed since goes. That sweep adds no note
-when a worktree still stays. Unarchiving a thread whose worktree was removed starts
+when a worktree still stays. When a worktree still stays two days after its thread
+was archived, it looks abandoned: the runner starts a thread (in the inbox,
+so on the phone too) that reads what removing each one would lose and asks
+"Remove it" or "Keep it". It removes only what Ville says to. Each branch tip
+is asked about once (`runner/worktree-question.json`), and nothing new is
+asked while that thread is open. Unarchiving a thread whose worktree was removed starts
 its next turn in the main checkout, with a note.
 
 An archive's cleanup waits for the thread's turn-end hooks, which run in that
