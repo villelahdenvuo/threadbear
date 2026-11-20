@@ -255,6 +255,12 @@ function setup(on = true) {
   return { h, id: thread.id, push, commands, setRuns: (r: typeof runs) => (runs = r) };
 }
 
+// Lets whatever the fake clock's move set off run to its end: a look the
+// runner booked would have asked by then. Tests that nothing more is asked.
+async function settle(): Promise<void> {
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+}
+
 test('ciRuns: a push in a thread shows its runs in Highlights, and the runner stops asking once they finish', async () => {
   const { h, id, push, commands, setRuns } = setup();
   push();
@@ -276,7 +282,7 @@ test('ciRuns: a push in a thread shows its runs in Highlights, and the runner st
   assert.equal(rec.rec.ciRuns?.watches.every((w) => w.done), true);
   const asked = commands.length;
   h.clock.advance(10 * 60_000);
-  await new Promise((r) => setTimeout(r, 20));
+  await settle();
   assert.equal(commands.length, asked, 'nothing more asked');
 });
 
@@ -320,7 +326,7 @@ test('ciRuns: off, or archived, nothing is asked and no runs are shown', async (
   const off = setup(false);
   off.push();
   off.h.clock.advance(60_000);
-  await new Promise((r) => setTimeout(r, 20));
+  await settle();
   assert.equal(off.commands.length, 0);
   assert.equal(off.h.runner.highlights(off.id).runs, undefined);
 
@@ -329,6 +335,6 @@ test('ciRuns: off, or archived, nothing is asked and no runs are shown', async (
   await until(() => Boolean(on.h.runner.threads.get(on.id)!.rt.ciTimer), 'a look booked');
   on.h.runner.threads.get(on.id)!.rec.archivedAt = '2026-11-12T10:00:00.000Z';
   on.h.clock.advance(60_000);
-  await new Promise((r) => setTimeout(r, 20));
+  await settle();
   assert.equal(on.commands.length, 0);
 });
