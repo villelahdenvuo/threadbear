@@ -288,8 +288,21 @@ public struct LimitPace: Sendable, Equatable {
                 perHour = max(0, oldest.remainingPercent - left) / (now.timeIntervalSince(oldest.at) / 3600)
             }
         }
+        let elapsed = now.timeIntervalSince(start) / 3600
+        if perHour == nil, week, elapsed < 12 {
+            // Under half a day into the week: a busy first hour, run on
+            // around the clock, says it runs out in two days. Go by the
+            // week before instead: what had gone by its last reading, over
+            // the time since it began. Each week starts full.
+            let prevStart = start.addingTimeInterval(-span)
+            if let last = samples.filter({ $0.at >= prevStart && $0.at < start }).max(by: { $0.at < $1.at }) {
+                let prevElapsed = last.at.timeIntervalSince(prevStart) / 3600
+                if prevElapsed >= 12 { perHour = max(0, 100 - last.remainingPercent) / prevElapsed }
+            }
+            // No week before to go by: too early to say.
+            if perHour == nil { return nil }
+        }
         if perHour == nil {
-            let elapsed = now.timeIntervalSince(start) / 3600
             // Too early in the window to say anything.
             guard elapsed >= (week ? 2 : 0.25) else { return nil }
             perHour = max(0, 100 - left) / elapsed
