@@ -81,6 +81,21 @@ test("unitTests on Windows: test-windows.mjs's update gate, the files that cover
   assert.deepEqual(calls.map((x) => [x.cmd, ...x.args]), [[c.node, 'scripts/test-windows.mjs', '--gate']]);
 });
 
+test('unitTests: tooling tests left out run every other file under test/unit, nested ones too', () => {
+  const dir = tmpDir();
+  for (const f of ['a.test.ts', 'perf-lock.test.ts', 'sub/b.test.ts', 'helper.ts']) {
+    fs.mkdirSync(path.dirname(path.join(dir, 'test/unit', f)), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'test/unit', f), '');
+  }
+  const { io, said, calls } = fakeIo([{ status: 0 }]);
+  steps.unitTests({ ...c, leaveOut: ['test/unit/perf-lock.test.ts'] }, { cwd: dir }, io);
+  assert.equal(calls[0].cmd, c.node);
+  const files = calls[0].args.filter((a) => a.startsWith('test/'));
+  assert.deepEqual(files, ['test/unit/a.test.ts', 'test/unit/sub/b.test.ts']);
+  assert.ok(calls[0].args.includes('--test-timeout=300000'));
+  assert.ok(said.some((s) => /Leaving out 1 tooling test files/.test(s)), said.join('\n'));
+});
+
 test('step: a script (npm-cli.js on Windows) runs on this Node', () => {
   const { io, calls } = fakeIo([{ status: 0 }]);
   steps.step('npm', 'C:\\node\\node_modules\\npm\\bin\\npm-cli.js', ['ci'], {}, io);

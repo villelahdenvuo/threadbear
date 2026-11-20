@@ -786,7 +786,7 @@ function deployBackend(c, g, v) {
   if (r.status !== 0) throw new Fail('The backend deploy failed, so the runner stays on its current release. Fix it and deploy again, or pass --skip-backend.');
 }
 
-function checks(c, g) {
+function checks(c, g, dirty) {
   const opts = { cwd: c.runnerDir, env: cleanEnv() };
   if (remoteChecks(checkHostsFrom(readJson(path.join(c.home, 'runner.json'))), g.root, opts)) return;
   if (!packagesInstalled(c.runnerDir)) {
@@ -805,7 +805,31 @@ function checks(c, g) {
     step('Installing the repo\'s packages', c.npm, ['ci', '--no-audit', '--no-fund'], { ...opts, cwd: g.root });
   }
   step('Typecheck', c.npm, ['run', 'typecheck'], opts);
-  unitTests(c, opts);
+  unitTests({ ...c, leaveOut: dirty ? [] : toolingLeaveOut(c, g) }, opts);
+}
+
+// The slow tests of Threadbear's own tooling (landing, worktrees, check
+// hosts, the build lock) that this build can leave out: those that nothing
+// changed since the running release touches, as tb land's --quick check
+// decides (scripts/tooling-tests.mjs). Main has passed that check, and
+// these took about half of a 36-minute update build on Ville's Mac, at a
+// load of 37, where three of them then failed on time (20 Nov). With no
+// running release to compare with, or one built from uncommitted files or
+// a commit that isn't behind this one, everything runs.
+function toolingLeaveOut(c, g) {
+  const script = path.join(g.root, 'scripts', 'tooling-tests.mjs');
+  const id = currentId(c);
+  const info = id && readJson(path.join(c.releases, id, 'release.json'));
+  if (!info?.commit || info.dirty || !fs.existsSync(script)) return [];
+  if (spawnSync('git', ['-C', g.root, 'merge-base', '--is-ancestor', info.commit, g.commit]).status !== 0) return [];
+  const changed = path.join(os.tmpdir(), `threadbear-deploy-changed-${process.pid}.txt`);
+  try {
+    fs.writeFileSync(changed, git(g.root, ['diff', '--name-only', info.commit, g.commit]) + '\n');
+    const r = spawnSync(process.execPath, [script, changed], { encoding: 'utf8' });
+    return r.status === 0 ? r.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+  } finally {
+    fs.rmSync(changed, { force: true });
+  }
 }
 
 function snapshotHead(c, g, dest) {
@@ -1508,7 +1532,7 @@ async function deploy(c, v, waitMs) {
   warnStaleLaunch(c);
   if (off) say(`Note: ${off}`);
   if (v['skip-checks']) say('Skipping the checks.');
-  else checks(c, g);
+  else checks(c, g, dirty);
   const id = newReleaseId(c, g.short, dirty);
   build(c, id, g, dirty);
   try {

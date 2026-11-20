@@ -231,12 +231,20 @@ export function remoteChecks(hosts, root, opts, io = {}) {
 // held the run, and so the runner, off main for 48 minutes on 29 Oct, until
 // it was stopped by hand.
 export const TEST_LIMITS = ['--test-timeout=300000', '--test-force-exit'];
+// c.leaveOut: test files (from runner/) the run leaves out, from
+// scripts/tooling-tests.mjs (deploy.mjs's toolingLeaveOut says when).
 export function unitTests(c, opts, io = {}) {
   const { say = console.log } = io;
   // On Windows, only the files that cover what Windows alone runs
   // (test/windows-update-gate.txt says why): no landing is checked on
   // Windows, so the whole suite there is a report on GitHub, not a gate.
-  const suite = (c.platform ?? process.platform) === 'win32' ? [c.node ?? process.execPath, ['scripts/test-windows.mjs', '--gate']] : [c.npm, ['test']];
+  const leaveOut = new Set(c.leaveOut ?? []);
+  let suite = (c.platform ?? process.platform) === 'win32' ? [c.node ?? process.execPath, ['scripts/test-windows.mjs', '--gate']] : [c.npm, ['test']];
+  if (leaveOut.size && suite[0] === c.npm) {
+    const files = unitTestFiles(opts.cwd ?? '.').filter((f) => !leaveOut.has(f));
+    say(`Leaving out ${leaveOut.size} tooling test files: nothing they test changed since the running release.`);
+    suite = [c.node ?? process.execPath, ['--import=./test/helpers/clean-env.ts', '--test', '--test-reporter=spec', ...TEST_LIMITS, ...files]];
+  }
   try {
     step('Unit tests', ...suite, opts, io);
   } catch (e) {
@@ -251,6 +259,20 @@ export function unitTests(c, opts, io = {}) {
     step(`Rerunning ${files.join(', ')}`, c.node ?? process.execPath, ['--import=./test/helpers/clean-env.ts', '--test', '--test-reporter=spec', '--test-concurrency=1', ...TEST_LIMITS, ...files], opts, io);
     say(`Flaky: ${files.join(', ')} failed in the full run and passed alone (first run's output: ${e.logFile})`);
   }
+}
+
+// What package.json's test script runs: test/unit/**/*.test.ts, from runner/.
+export function unitTestFiles(dir) {
+  const out = [];
+  const walk = (rel) => {
+    for (const e of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+      const r = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(r);
+      else if (e.name.endsWith('.test.ts')) out.push(r);
+    }
+  };
+  walk('test/unit');
+  return out.sort();
 }
 
 function readOr(file) {
