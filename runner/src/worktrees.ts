@@ -2250,6 +2250,20 @@ export async function stillCheckedOut(w: WorktreeRecord): Promise<boolean> {
   return Boolean(checkouts?.some((c) => realpath(c.path) === here && c.branch === w.branch));
 }
 
+// Everything on `branch` is on main: its tip is in main's history, or
+// merging it into main would change no file. The second is for a branch
+// whose commits landed under other ids: tb land rebases and batches, and a
+// thread can cherry-pick another's commit. Before 20 Nov 2026 only the first
+// counted, so those worktrees stayed after their threads were archived
+// (three on Ville's Mac).
+export async function landedOnMain(mainCheckout: string, branch: string): Promise<boolean> {
+  if ((await git(mainCheckout, ['merge-base', '--is-ancestor', branch, MAIN])).ok) return true;
+  const merged = await git(mainCheckout, ['merge-tree', '--write-tree', MAIN, branch]);
+  if (!merged.ok) return false; // a conflict, or git couldn't tell
+  const main = await gitOut(mainCheckout, ['rev-parse', `${MAIN}^{tree}`]);
+  return Boolean(main) && merged.stdout.split('\n')[0].trim() === main;
+}
+
 // When its thread is archived or deleted: a worktree whose branch is all
 // on main is removed with its branch (`--force` only for untracked
 // files), or, with `keep` and room for another spare, set aside as one;
@@ -2265,10 +2279,7 @@ export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolea
   const ref = await git(w.mainCheckout, ['rev-parse', '--verify', '--quiet', `refs/heads/${w.branch}`]);
   if (!ref.ok && ref.code !== 1) return { removed: false, reason: `git couldn't tell whether ${w.branch} is still there` };
   let branchThere = ref.ok;
-  if (branchThere) {
-    const merged = await git(w.mainCheckout, ['merge-base', '--is-ancestor', w.branch, MAIN]);
-    if (!merged.ok) return { removed: false, reason: `${w.branch} has commits that aren't on ${MAIN}` };
-  }
+  if (branchThere && !(await landedOnMain(w.mainCheckout, w.branch))) return { removed: false, reason: `${w.branch} has commits that aren't on ${MAIN}` };
   // A record can outlive its worktree without hearing (THREADBEAR-16: a
   // handover saved it while the cleanup ran), and slot folders are reused.
   // So the folder is only touched if it's still this branch's checkout:

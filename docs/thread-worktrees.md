@@ -473,8 +473,13 @@ it again next time, a teardown should be safe to run twice.
 When a thread with a worktree is archived or deleted: if its branch is
 merged into main (or has no commits of its own), the worktree is removed
 (`git worktree remove`, `--force` only for untracked files) and the branch
-deleted. Otherwise both stay, with a `system.note` saying so and how to
-land or drop them. Unarchiving a thread whose worktree was removed starts
+deleted. A branch also counts as merged when merging it into main would
+change no file: its commits landed under other ids (a `tb land` rebase, or
+another thread's cherry-pick). Otherwise both stay, with a `system.note`
+saying so and how to land or drop them. Once a day (and 10 minutes after
+the runner starts), archived threads whose worktree stayed get the cleanup
+again, so one whose work has landed since goes. That sweep adds no note
+when a worktree still stays. Unarchiving a thread whose worktree was removed starts
 its next turn in the main checkout, with a note.
 
 An archive's cleanup waits for the thread's turn-end hooks, which run in that

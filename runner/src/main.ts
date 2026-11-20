@@ -16,7 +16,7 @@ import { threadKey as makeThreadKey } from './rpc-auth.ts';
 import { makePrivate } from './win-acl.ts';
 import { loadConfig, ensureHome, readToken, paths, recordListening, defaultHome, DEFAULT_CWD, RUNNER_VERSION, RunnerJsonError, readRunnerJson, peekRunnerJson, writeRunnerJson } from './config.ts';
 import { startHousekeeping } from './housekeeping.ts';
-import { startBorrowSweep } from './runner/worktrees.ts';
+import { startArchivedWorktreeSweep, startBorrowSweep } from './runner/worktrees.ts';
 import { win32Helper } from './win32-helper.ts';
 import { RELEASE, markConfigStop, markGoodLater, onStopRequest, onSupervisorGone, ownCheckout, readRelease, readState, requestHandover, supervised, takeRollbackNotice, tellLaunchListening } from './release.ts';
 import { PatchTrust } from './patch-trust.ts';
@@ -1633,7 +1633,10 @@ async function main(): Promise<void> {
   });
   // Borrowed worktrees nobody gave back (borrows.ts), on this Mac's real
   // data dir only: a dev runner's threads aren't the ones that borrowed.
-  const stopBorrowSweep = cfg.home === defaultHome() && !box ? startBorrowSweep(runner, log) : () => {};
+  // And the daily cleanup of archived threads' worktrees, stopped with it.
+  const stopBorrowSweep = cfg.home === defaultHome() && !box
+    ? ((stops) => () => stops.forEach((stop) => stop()))([startBorrowSweep(runner, log), startArchivedWorktreeSweep(runner, log)])
+    : () => {};
   const cancelMarkGood = markGoodLater(cfg.home, RELEASE.release, log, process.env, () => {
     restarter.proven();
     // A box never updates itself or anything else: a new release is a new image.

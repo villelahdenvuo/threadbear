@@ -514,10 +514,35 @@ export const worktreesPart = {
     }
   },
 
+  // Archived threads whose worktree stayed get their cleanup again: what
+  // kept it (work not on main yet, uncommitted changes, a git that timed
+  // out) may have gone since, as their work landed through another thread
+  // or under other commit ids. Quietly: a worktree that still stays says
+  // nothing new in its thread. Returns how many went.
+  async sweepArchivedWorktrees(this: Runner): Promise<number> {
+    let removed = 0;
+    for (const st of [...this.threads.values()]) {
+      const { rec, rt } = st;
+      const w = rec.worktree;
+      if (!rec.archivedAt || !w || w.removedAt || w.cleanupOwed || rt.cleaning || rt.deleted) continue;
+      const cleaning = this.cleanUpWorktree(st, false, true)
+        .catch((e: unknown) => this.log.warn('archived worktree sweep failed', { threadId: rec.id, error: String(e) }))
+        .finally(() => {
+          if (rt.cleaning === cleaning) rt.cleaning = undefined;
+        });
+      rt.cleaning = cleaning;
+      await cleaning;
+      if (w.removedAt) removed++;
+    }
+    if (removed) this.log.info('archived worktree sweep', { removed });
+    return removed;
+  },
+
   // When the thread is archived or deleted: its worktree and branch go if
   // everything on them is on main; otherwise they stay, and the thread (or,
   // once it's deleted, a notice) says so and how to land or drop them.
-  async cleanUpWorktree(this: Runner, st: ThreadState, deleted = false): Promise<void> {
+  // `again` (the daily sweep): staying says nothing, as it said so before.
+  async cleanUpWorktree(this: Runner, st: ThreadState, deleted = false, again = false): Promise<void> {
     const { rec } = st;
     const w = rec.worktree;
     if (!w || w.removedAt) return;
@@ -578,6 +603,7 @@ export const worktreesPart = {
       if (cleared.length) this.log.info("cleared a kept worktree's build caches", { threadId: rec.id, path: w.path, cleared });
     }
     const freed = cleared.length ? ` Its build caches (${cleared.join(', ')}) were cleared to save space, and get built again if it carries on.` : '';
+    if (again) return;
     if (deleted) {
       this.notice('info', `"${rec.title}" was deleted, but its worktree at ${w.path} and branch ${w.branch} stay: ${result.reason}. ${how}${freed}`);
       return;
@@ -588,6 +614,31 @@ export const worktreesPart = {
 };
 
 export type WorktreesPart = RunnerPart<typeof worktreesPart>;
+
+// The daily cleanup: archived threads' worktrees that stayed get another
+// go (sweepArchivedWorktrees). Ten minutes after start, then every day.
+export function startArchivedWorktreeSweep(runner: Runner, log: Logger): () => void {
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await runner.sweepArchivedWorktrees();
+    } catch (e) {
+      log.warn('archived worktree sweep failed', { error: String(e) });
+    } finally {
+      running = false;
+    }
+  };
+  const first = setTimeout(() => void run(), 10 * 60_000);
+  const timer = setInterval(() => void run(), 24 * 3_600_000);
+  first.unref();
+  timer.unref();
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+  };
+}
 
 // Takes back borrowed worktrees nobody gave back (borrows.ts), in every
 // repo a thread here has had a worktree of. Two minutes after start, then
