@@ -34,6 +34,7 @@ export type Highlight = {
   pushedAt?: string; // commit: when that push was
   repo?: string; // commit: owner/name, from the push's "To" line, on GitHub
   dir?: string; // commit: the folder the push ran in, when not the thread's
+  watched?: true; // pr: its auto-fix wand is on (pr-watch.ts); set on the way out, never kept
   seq: number;
   lastSeq: number;
   at: string;

@@ -1615,7 +1615,30 @@ impl SidePane {
         let detail = status.as_ref().map(|s| s.line()).or_else(|| Some(item.how.word()).filter(|w| !w.is_empty()).map(str::to_owned));
         let (open, thread2) = (item.clone(), thread.clone());
         let (menu_item, menu_thread) = (item.clone(), thread.clone());
+        // The auto-fix wand, on an open PR of this Mac's runner (patch
+        // panels' switch, `row_switch`).
+        let wand = item.url.clone().filter(|_| !thread.is_remote() && !status.as_ref().is_some_and(|s| s.landed())).map(|url| {
+            let (on, pending) = self.pr_watch_shown(&url, item.watched);
+            let what = short_ref(&url).unwrap_or_else(|| item.title.clone());
+            let tip = if pending {
+                format!("Auto-fix {what}: switching {}…", if on { "on" } else { "off" })
+            } else if on {
+                format!("Auto-fix {what} is on: a conflict, failing CI or new review comments are sent to this thread to fix. Click to turn off.")
+            } else {
+                format!("Auto-fix {what}: off. Click to have this thread fix its conflicts, failing CI and review comments as they come.")
+            };
+            let thread_id = thread.id.clone();
+            RowSwitch {
+                id: SharedString::from(format!("hl-row-prs-{}-wand", item.id)),
+                symbol: "wand.and.stars".into(),
+                on,
+                pending,
+                tip,
+                press: Rc::new(move |this: &mut SidePane, cx: &mut Context<SidePane>| this.press_pr_watch(thread_id.clone(), url.clone(), !on, cx)),
+            }
+        });
         PaneRow::new(SharedString::from(format!("hl-row-prs-{}", item.id)), title)
+            .switch(wand)
             .icon("arrow.triangle.pull")
             .tinted(tint.flatten())
             .lead(short)
@@ -2363,7 +2386,7 @@ impl SidePane {
                 .map(|h| {
                     let st = status_of(h);
                     let title = st.as_ref().map(|s| s.title.clone()).filter(|t| !t.is_empty()).unwrap_or_else(|| h.title.clone());
-                    json!({ "title": title, "lead": h.url.as_deref().and_then(threadbear_core::pull_requests::short_ref), "trailing": st.as_ref().and_then(|s| s.ago(now)), "detail": st.as_ref().map(|s| s.line()), "tone": st.as_ref().map(|s| format!("{:?}", s.tone()).to_lowercase()), "symbol": "arrow.triangle.pull" })
+                    json!({ "title": title, "lead": h.url.as_deref().and_then(threadbear_core::pull_requests::short_ref), "trailing": st.as_ref().and_then(|s| s.ago(now)), "detail": st.as_ref().map(|s| s.line()), "tone": st.as_ref().map(|s| format!("{:?}", s.tone()).to_lowercase()), "watched": h.watched, "symbol": "arrow.triangle.pull" })
                 })
                 .collect();
             if !landed.is_empty() {

@@ -78,6 +78,8 @@ pub(crate) struct PrPanes {
     status_failed_at: Option<i64>,
     /// A redraw is booked for when the statuses showing go stale.
     status_redraw: bool,
+    /// Auto-fix wands pressed and not yet answered: what each was turned to.
+    watch_pending: HashMap<String, bool>,
     /// A PR's files that came before the PR itself (`load_pr`).
     early_files: HashMap<String, PrFiles>,
     /// When each PR showing was read from GitHub, for reading it again
@@ -413,6 +415,51 @@ impl SidePane {
     #[cfg(feature = "automation")]
     pub(crate) fn pr_status_heard(&self, url: &str) -> Option<rules::PrStatus> {
         pr_url(url).and_then(|u| self.prs.status.get(&u).map(|(s, _)| s.clone()))
+    }
+
+    /// A PR row's auto-fix wand as it shows: what it was pressed to while
+    /// the runner answers, else what the highlight says.
+    pub(crate) fn pr_watch_shown(&self, url: &str, watched: bool) -> (bool, bool) {
+        match pr_url(url).and_then(|u| self.prs.watch_pending.get(&u).copied()) {
+            Some(on) => (on, true),
+            None => (watched, false),
+        }
+    }
+
+    /// The wand pressed: the runner watches the PR for this thread, or stops
+    /// (`prWatch.set`), then Highlights is read again for every wand.
+    pub(crate) fn press_pr_watch(&mut self, thread_id: String, url: String, on: bool, cx: &mut Context<Self>) {
+        let Some(url) = pr_url(&url) else { return };
+        if self.prs.watch_pending.contains_key(&url) {
+            return;
+        }
+        self.prs.watch_pending.insert(url.clone(), on);
+        crate::activity::menu_chosen(Some(format!("PR > auto-fix {}", if on { "on" } else { "off" })), None);
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let res = call(client, "prWatch.set", json!({ "threadId": thread_id, "urls": [url], "on": on })).await;
+            this.update(cx, |this, cx| {
+                if let Err(e) = res {
+                    this.note_error(format!("Couldn't turn auto-fix {}: {}", if on { "on" } else { "off" }, e.message), cx);
+                }
+                this.refresh_highlights(thread_id.clone(), std::time::Duration::ZERO, cx);
+                // Kept until the new highlights come, so the wand doesn't flick back.
+                let url2 = url.clone();
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(std::time::Duration::from_millis(1500)).await;
+                    this.update(cx, |this, cx| {
+                        this.prs.watch_pending.remove(&url2);
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .detach();
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
     }
 
     /// A button's work on GitHub: busy until it lands, then the PR read again.

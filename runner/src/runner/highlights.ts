@@ -23,6 +23,8 @@ export const highlightsPart = {
     this.catchUpHighlights(st);
     this.kickCiRuns(st);
     const out = highlightsView(st.rec.highlights!, st.rec.brief);
+    // Each PR's auto-fix wand (runner/pr-watch.ts).
+    if (experimentOn(this.cfg.home, 'prHighlights')) for (const h of out.highlights) if (h.kind === 'pr' && this.prWatched(h.url)) h.watched = true;
     if (st.rec.ciRuns?.runs.length && experimentOn(this.cfg.home, 'ciRuns')) out.runs = st.rec.ciRuns.runs.map((r) => ({ ...r }));
     return out;
   },

@@ -28,6 +28,7 @@ export const GATED_READS: ReadonlySet<string> = new Set([
   'threads.unsubscribe',
   'threads.subagent',
   'threads.highlights',
+  'prWatch.list',
   'threads.commands',
   'threads.contextUsage',
   'buttons.list',

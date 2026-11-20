@@ -160,6 +160,9 @@ import { patchesPart, type PatchesPart } from './runner/patches.ts';
 import { withThreadId } from './patches.ts';
 import { highlightsPart, type HighlightsPart } from './runner/highlights.ts';
 import { ciRunsPart, type CiRunsPart, type CiShell } from './runner/ci-runs.ts';
+import { prWatchPart, type PrWatchPart } from './runner/pr-watch.ts';
+import type { PrWatchState } from './pr-watch.ts';
+import type { Gh } from './land-gate.ts';
 import { titlesPart, type TitlesPart } from './runner/titles.ts';
 import { commandsPart, type CommandsPart } from './runner/commands.ts';
 import { contextUsagePart, type ContextUsageAnswer, type ContextUsagePart } from './runner/context-usage.ts';
@@ -788,7 +791,7 @@ export const UNTIL_RESTART = '9999-12-31T00:00:00.000Z';
 export const NO_WAKE_TIME = UNTIL_RESTART;
 
 // Parts of the Runner that live in runner/ (see each file's top).
-export interface Runner extends LooseEndsPart, QuietInboxPart, InboxGuessPart, NestedPart, MailPart, ColdCompactPart, LabReviewPart, NewThreadsPart, HibernationPart, TitlesPart, HighlightsPart, CiRunsPart, PatchesPart, EditingPart, ClisPart, ReviewsPart, ButtonsPart, ApprovalsPart, ProjectsHostPart, StoppedWorkPart, HandoversPart, PoolsPart, NetworkPart, WorktreesPart, CommandsPart, ContextUsagePart, MovesPart, WarmStartPart {}
+export interface Runner extends LooseEndsPart, QuietInboxPart, InboxGuessPart, NestedPart, MailPart, ColdCompactPart, LabReviewPart, NewThreadsPart, HibernationPart, TitlesPart, HighlightsPart, CiRunsPart, PrWatchPart, PatchesPart, EditingPart, ClisPart, ReviewsPart, ButtonsPart, ApprovalsPart, ProjectsHostPart, StoppedWorkPart, HandoversPart, PoolsPart, NetworkPart, WorktreesPart, CommandsPart, ContextUsagePart, MovesPart, WarmStartPart {}
 export class Runner {
   // While main.ts is still starting up: waking a thread for its waits
   // (reconcileWaits) would start a CLI whose tools aren't ready, so they
@@ -822,6 +825,12 @@ export class Runner {
   // Runs `gh` and `git` for GitHub Actions runs (runner/ci-runs.ts); tests
   // set a fake.
   ciShell?: CiShell;
+  // PR auto-fix's watch (runner/pr-watch.ts): its state once read, the next
+  // look, whether one is under way, and gh (tests set a fake).
+  prWatch?: PrWatchState;
+  prWatchTimer?: TimerHandle;
+  prWatchBusy?: boolean;
+  prWatchGh?: Gh;
   copyTranscript: typeof copySessionTranscript;
   subagentTranscript: typeof subagentTranscriptPath;
   screenshot: Screenshot;
@@ -1074,6 +1083,8 @@ export class Runner {
       }
     }
     this.armSnoozeTimer();
+    // PRs whose auto-fix wand is on (runner/pr-watch.ts).
+    this.armPrWatch();
     // Waits for room are in thread.json, so they outlive a restart.
     this.armRoomTimer();
     // So are waits for the network.
@@ -5054,7 +5065,7 @@ export class Runner {
 
 // The Runner's other methods live in parts under runner/, one area each;
 // they go onto its prototype here, as the class's own methods would be.
-for (const part of [looseEndsPart, quietInboxPart, inboxGuessPart, nestedPart, mailPart, coldCompactPart, labReviewPart, newThreadsPart, hibernationPart, titlesPart, highlightsPart, ciRunsPart, patchesPart, editingPart, clisPart, reviewsPart, buttonsPart, approvalsPart, projectsHostPart, stoppedWorkPart, handoversPart, poolsPart, networkPart, worktreesPart, commandsPart, contextUsagePart, movesPart, warmStartPart]) {
+for (const part of [looseEndsPart, quietInboxPart, inboxGuessPart, nestedPart, mailPart, coldCompactPart, labReviewPart, newThreadsPart, hibernationPart, titlesPart, highlightsPart, ciRunsPart, prWatchPart, patchesPart, editingPart, clisPart, reviewsPart, buttonsPart, approvalsPart, projectsHostPart, stoppedWorkPart, handoversPart, poolsPart, networkPart, worktreesPart, commandsPart, contextUsagePart, movesPart, warmStartPart]) {
   for (const [key, d] of Object.entries(Object.getOwnPropertyDescriptors(part))) {
     Object.defineProperty(Runner.prototype, key, { ...d, enumerable: false });
   }

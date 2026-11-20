@@ -1373,6 +1373,8 @@ the summary and then the reply.
 | `github.prFiles` | `{ url }` | `{ files, filesError?, filesCut? }`: a PR's files alone, as in `PrView` |
 | `github.prStates` | `{ urls: string[] }` | `{ states: { [url]: "open" \| "draft" \| "merged" \| "closed" } }`. A link it couldn't place is left out |
 | `github.prStatus` | `{ urls: string[] }` | `{ prs: { [url]: PrStatus } }` (see Pull requests), for Highlights' Pull requests (experiment `prHighlights`; `-32000` while it's off). A PR GitHub doesn't give is left out |
+| `prWatch.set` | `{ threadId, urls: string[], on: boolean }` | `{ watched: string[] }` (every PR watched now, any thread). A PR's auto-fix wand, for that thread (experiment `prHighlights`; see Pull requests). A thread's key needs Full access |
+| `prWatch.list` | `{}` | `{ watches: { url, threadId, since: string; sentAt?, error?: string }[] }` |
 | `github.prAct` | `{ url, action, method?, body? }` | `{}` once GitHub has it, or gh's own error. `action` is `merge` (with `method` `rebase`, `squash` or `merge`), `close`, `reopen`, `comment` (`body`), `approve` (`body?`) or `requestChanges` (`body`) |
 | `connectors.status` | `{ refresh?: boolean }` | `{ connectors: ConnectorsStatus }` (see Connectors). `refresh` asks the gateway's `/health` first, unless it did in the last 10 seconds; the app passes it when the Connectors panel opens. A runner from before Connectors answers `-32601` and the app leaves the panel out |
 | `librarian.run` | `{ threadId?: string }` | `{ librarian: LibrarianStatus }`. Queues a look at the thread now (reason `asked`), or with no `threadId`, at every thread it has never looked at (a backfill, newest first) |
@@ -5556,6 +5558,7 @@ type Highlight = {
   pushed?: true         // commit: a later git push in the thread sent its branch
   pushedAt?: string     // commit: when that push was
   repo?: string         // commit: "owner/name", from the push's "To" line, on GitHub
+  watched?: true        // pr: its auto-fix wand is on (experiment prHighlights)
   seq: number           // the event it was first seen in (a pin: lastSeq then)
   lastSeq: number       // the latest event that mentioned it
   at: string            // when it was first seen
@@ -5910,6 +5913,24 @@ type PrStatus = {
   updatedAt: string;
 };
 ```
+
+Each open PR's row has an auto-fix wand. On, the runner watches the PR
+for the thread whose wand it was (`prWatch.set`; kept in
+`<home>/pr-watch.json`), with one `gh api graphql` call a minute for every
+watched PR. Each look works out the PR's problems: a merge conflict, a
+failing head commit, each unresolved review thread, changes requested, and
+each top-level review or comment by someone else (not bots' comments, not
+the user's own). One the watch hasn't sent before goes to the thread as a
+"PR watch:" message asking it to fix that PR, pointing at
+`~/.threadbear/pr-auto-fix.md` when that file is there for the user's own
+rules. Reviews and comments from before the wand was turned on aren't
+sent. A problem that clears is forgotten, so it's new if it comes back. An
+approved PR with nothing else open gets one message per head commit asking
+the user whether to merge (it never merges by itself). A thread whose
+watched PRs all wait for review is snoozed a day, once per PR update. A
+busy or archived thread gets nothing until it's idle again; a merged or
+closed PR's watch ends. `tb pr-watch on|off <thread> <url>...` and `tb
+pr-watch list` do the same from a shell.
 
 A row is red when CI failed or changes were asked for, yellow while it
 waits (CI running, a review, a conflict or open threads), green once it's

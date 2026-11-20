@@ -1026,6 +1026,14 @@ export class RpcServer {
         if (!experimentOn(r.cfg.home, 'prHighlights')) throw new RpcError(ErrorCode.other, 'The prHighlights experiment is off.');
         return ghCall(async () => ({ prs: await prStatus(p.urls as string[]) }));
       }
+      // A PR's auto-fix wand (runner/pr-watch.ts).
+      case 'prWatch.set': {
+        if (!Array.isArray(p.urls) || p.urls.some((u) => typeof u !== 'string')) throw bad('urls must be an array of strings');
+        if (typeof p.on !== 'boolean') throw bad('on must be true or false');
+        return r.setPrWatch(reqString(p, 'threadId'), p.urls as string[], p.on);
+      }
+      case 'prWatch.list':
+        return r.listPrWatch();
       case 'github.prAct': {
         const ref = reqPrRef(p);
         const action = { action: reqString(p, 'action'), method: optString(p, 'method'), body: optString(p, 'body') } as PrAction;

@@ -76,6 +76,8 @@ pub struct Highlight {
     pub sha: Option<String>,
     pub branch: Option<String>,
     pub pushed: bool,
+    /// A PR's auto-fix wand is on (experiment prHighlights).
+    pub watched: bool,
     pub seq: i64,
     pub last_seq: i64,
     pub at_ms: Option<i64>,
@@ -103,6 +105,7 @@ impl Highlight {
             sha: field(item, "sha"),
             branch: field(item, "branch"),
             pushed: item.get("pushed").and_then(Value::as_bool).unwrap_or(false),
+            watched: item.get("watched").and_then(Value::as_bool).unwrap_or(false),
             seq,
             last_seq: item.get("lastSeq").and_then(Value::as_i64).unwrap_or(seq),
             at_ms: field(item, "at").as_deref().and_then(parse_ms),
@@ -1715,6 +1718,7 @@ mod tests {
         // The unknown kind with a url is a link; the one with neither is left out.
         assert_eq!(titles(&sections.links), ["m/site#14", "localhost:4321", "A future link"]);
         let split = sections.clone().split_prs();
+        assert!(!split.prs[0].watched);
         assert_eq!(titles(&split.prs), ["m/site#14"]);
         assert_eq!(titles(&split.links), ["localhost:4321", "A future link"]);
         assert_eq!(sections.commits[0].sha.as_deref(), Some("abc1234"));
