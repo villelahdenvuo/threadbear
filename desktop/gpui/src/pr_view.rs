@@ -123,9 +123,11 @@ pub(crate) fn on(app: &crate::app::Threadbear) -> bool {
 }
 
 /// Whether Highlights lists PRs under Pull requests with their status: the
-/// prHighlights experiment, from `hello`.
+/// prHighlights experiment. Settings' switch first, as `hello`'s list is
+/// only read on connecting: turned on after that, the section stayed away
+/// until the app reconnected (Ville, 20 Nov 2026).
 pub(crate) fn status_on(app: &crate::app::Threadbear) -> bool {
-    app.remote.experiments.iter().any(|e| e == "prHighlights")
+    app.experiment_on("prHighlights")
 }
 
 /// The canonical URL of a PR link, if it's one that opens here.
