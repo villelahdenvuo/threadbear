@@ -1261,7 +1261,7 @@ Persisted event types (stored in `events.ndjson`, returned by `threads.events`):
 | `turn.started` | `turnId`, `wokeBy?: {kind, description}[]`. A turn the agent starts by itself (a background task finished) has no `user.message` before it. `wokeBy` is on such a turn when background work finishing started it: each task that had finished since the last turn, `kind` as in `BackgroundTask` (`agent` \| `shell` \| `monitor` \| `other`), its `description` possibly empty. Clients mark the time between that turn and the one before it in the transcript (a "6 min later" divider, Mike 3 Nov). A `user.message` after `turn.started` was sent while the turn ran and went into it |
 | `turn.completed` | `turnId`, `outcome` (`completed` \| `interrupted` \| `failed`), `durationMs`, `costUsd?` (Codex turns have none), `usage?` (Claude: `{inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens}`; Codex: `{inputTokens, cachedInputTokens, cacheWriteTokens?, outputTokens, reasoningTokens}`), `error?`, `errorKind?` (`usageLimit` \| `contextWindow` \| `auth` \| `network`, when a failed turn's cause is known, so a client can offer the fix without reading `error`), `needs?` (`you` \| `nothing`), `asks?: Ask[]`, `next?: string[]` (with `nothing`: suggested follow-ups), `needsFrom?` (`tool` \| `text`): what a completed turn said it needs from Mike (Needs you), `review?: LabReviewLedger` (on the turn that answered a review by another lab's findings: see that) |
 | `asks.ticked` | `asksSeq`, `ticked: number[]` (indexes into that turn's `asks`, the whole set now ticked). Outside any turn. The latest one for an `asksSeq` is that card's ticks |
-| `system.note` | `text` (e.g. "Resumed session", "Compacted the conversation", "Patch reseed added: action Reseed dev DB."), `wake?: true` on a background task's notification that went into the running turn, which the agent reads at its next step (see "Once a turn, or once a message"), `login?: true` on a note about the thread's login running out: its move to another one, its wait for room, or that wait being called off (Pools, "Moves in the transcript"), `savedMessage?: true` when an early Stop saved a message for the next send. Login and saved-message notes go up to the backend (Sync, "Messages"), so other Macs, the phone and the website show them |
+| `system.note` | `text` (e.g. "Resumed session", "Compacted the conversation", "Patch reseed added: action Reseed dev DB."), `wake?: true` on a background task's notification that went into the running turn, which the agent reads at its next step (see "Once a turn, or once a message"), `login?: true` on a note about the thread's login running out: its move to another one, its wait for room, or that wait being called off (Pools, "Moves in the transcript"), `savedMessage?: true` when an early Stop saved a message for the next send, `move?: ThreadMove` when the thread moved between the inbox, hibernating and the archive (see "Moves in the transcript"). Login, saved-message and move notes go up to the backend (Sync, "Messages"), so other Macs, the phone and the website show them |
 | `error` | `message` |
 | `action.run` | `actionId`, `patch`, `title`, `command`, `ok`, `exitCode?`, `text` (what it printed, truncated to 64 KB), `truncated`, `durationMs`, `trigger?` (`"turn.end"` when a hook ran it, `"worktree.setup"` for a new worktree's `setup`, `"worktree.teardown"` for an archived thread's worktree `teardown` (see Worktrees); absent for a chip or `tb run`). A command that `actions.run` or a hook ran; outside any turn unless one was running, in which case it carries that `turnId` |
 | `thread.rewound` | `fromSeq`, `toSeq`, `files: { undone: string[], failed: { path, reason }[], how: "checkpoint" \| "diffs" \| "none" }`. Mike edited the message at `fromSeq` (see Editing a message): every event from `fromSeq` to `toSeq` (inclusive, always this event's `seq` - 1) is gone from the conversation, and clients hide them. Outside any turn. The edited message comes next, as a `user.message` with `editOf: fromSeq` |
@@ -3213,6 +3213,45 @@ came out. A `byline` in a thread with no `startedBy` is dropped. Threads from be
 this have none, and `tb new` outside a thread with no flags could be Mike at
 a terminal, so it has none either. Mirrored to the phone's row from backend
 API 22, and to another runner's sidebar row on a Mac from API 23.
+
+## Moves in the transcript
+
+Every time a thread moves between the inbox, hibernating and the archive,
+its transcript gets one `system.note` with a `move`, so it's clear later when
+it went away, when it came back, and who did it (Ville, 20 Nov 2026):
+
+```ts
+type ThreadPlace = "inbox" | "hibernating" | "archived"
+type ThreadMove = {
+  from: ThreadPlace, to: ThreadPlace,
+  by: "mike" | "agent" | "schedule" | "thread" | "threadbear",
+  until?: string // the wake time, on a move to hibernating that has one
+}
+```
+
+The event's `ts` is when it moved. `text` says it in words, for clients that
+don't know `move` and for the agent reading its thread:
+
+| What happened | `by` | `text`, for example |
+| --- | --- | --- |
+| Mike hibernates it (the app, the phone, `tb snooze`) | `mike` | "Hibernated by you until Monday 24 November, 9 am." |
+| An agent's `update_thread` | `agent` | "Hibernated by an agent until …" |
+| end_turn's `snooze`, Hibernate in words, `waitFor` | `agent` or `mike` | the note each already wrote ("Hibernating until …") |
+| A new wake time while it's away | as above | "Wake time changed by you to …" (`from` and `to` both `hibernating`) |
+| Wake now | `mike` | "Woken by you after 2 days." |
+| Its time comes, a restart, a topic, the threads it waits on | `threadbear` | the "Woke up …" note it already had |
+| A message brings it back | `mike`, `schedule`, `thread` or `threadbear` | "Woke up after 3 hours for a scheduled message.", "Back from the archive for your message." |
+| An answer to a review brings it back | `mike` | "Woke up for your answer to a review." |
+| Archived | from `archivedBy` | "Archived by you.", or the verdict's note; Threadbear's own archives keep their notes |
+| Unarchived | `mike` or `agent` | "Unarchived by you." |
+
+An update that leaves it where it was writes nothing. The note comes before
+the message that brought the thread back. The runner writes these in
+`threads.update` and `threads.send` (`runner/src/place-moves.ts`). The GPUI
+app draws one as a divider with an icon for `to` (or a sun for a wake), the
+words, and the date and time. Other Macs, the phone and the website show the
+words as a note. Threads from before 20 Nov have no moves: nothing recorded
+them, so there is nothing to fill in.
 
 ## Who archived a thread
 

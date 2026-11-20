@@ -212,6 +212,15 @@ export type ThreadStatus = 'idle' | 'starting' | 'running' | 'waiting' | 'error'
 
 // Who archived a thread, and how Mike said it went (Who archived a thread).
 export type ArchivedBy = 'mike' | 'agent' | 'threadbear';
+
+// A thread moving between the inbox, hibernating and the archive, as its
+// transcript records it (docs/protocol.md, "Moves in the transcript").
+// `by`: Mike, an agent, a scheduled message, another thread's message, or
+// Threadbear itself (a wake time, a restart, the librarian, a tidy-up).
+// `until`: the wake time, on a move to hibernating that has one.
+export type ThreadPlace = 'inbox' | 'hibernating' | 'archived';
+export type MoveBy = 'mike' | 'agent' | 'schedule' | 'thread' | 'threadbear';
+export type ThreadMove = { from: ThreadPlace; to: ThreadPlace; by: MoveBy; until?: string };
 // The last two are the inboxGuess experiment's (runner/inbox-guess.ts):
 // whether he needed to see the thread at all, from the Archive menu.
 export type ArchiveVerdict = 'worked' | 'didntWork' | 'notNeeded' | 'didntNeedToSee' | 'gladISaw' | 'notSure';
@@ -929,7 +938,10 @@ export type EventBody =
   // or was told not to wait (runner/pools.ts). The only notes the backend
   // gets (sync.ts toMessageDoc), so another Mac can say a thread changed
   // login by itself.
-  | { type: 'system.note'; text: string; wake?: true; login?: true; savedMessage?: true; supersededReminder?: string }
+  // move: the thread moved between the inbox, hibernating and the archive
+  // (docs/protocol.md, "Moves in the transcript"); clients draw it as a
+  // divider with the time.
+  | { type: 'system.note'; text: string; wake?: true; login?: true; savedMessage?: true; supersededReminder?: string; move?: ThreadMove }
   | { type: 'error'; message: string }
   // A command action that ran (patches.ts): its output, truncated like a
   // tool result. Outside any turn.

@@ -1228,7 +1228,9 @@ export function toMessageDoc(threadId: string, e: PersistedEvent, scrub: (text: 
   // The runner's own words, a line or two: a move to another provider
   // also says which model takes over.
   if (e.type === 'system.note') {
-    const text = e.login || e.savedMessage ? scrub(e.text).trim().slice(0, NOTE_CHARS) : '';
+    // A move between the inbox, hibernating and the archive too, so every
+    // surface says when and who (docs/protocol.md, "Moves in the transcript").
+    const text = e.login || e.savedMessage || e.move ? scrub(e.text).trim().slice(0, NOTE_CHARS) : '';
     return text ? { threadId, seq: e.seq, role: 'note', text, ...turn, at: e.ts } : undefined;
   }
   if (e.type === 'plan.proposed') {

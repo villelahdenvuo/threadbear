@@ -828,6 +828,12 @@ three fingers). Over a thread's row a swipe left still archives it. A thread
 you start takes the place of the new-thread screen, so Back from it goes to
 wherever you were before you pressed New thread.
 
+Each time a thread is hibernated, wakes, is archived or comes back, its
+transcript gets a line across it saying what happened, who did it (you, an
+agent, a schedule, another thread or Threadbear) and the date and time. So
+a thread back in your inbox shows when it went away and what brought it
+back. Your phone and the website show the same words as a note.
+
 Hibernating or archiving a thread that's partway through a turn stops
 that turn. It also stops any background jobs that thread's agent left running,
 including shell jobs waiting their turn in a queue. From the row's hover buttons,

@@ -59,7 +59,8 @@ import type {
 } from './protocol.ts';
 import { agentsStillWorking, ErrorCode, LIMITS, PROTOCOL_VERSION, RpcError, sentByAgent } from './protocol.ts';
 import { cliName, providerName, providersForHello } from './providers.ts';
-import type { ArchivedBy, ArchiveVerdict, LibrarianStatus, LooseEnd, Project, QueuedJob, Schedule } from './protocol.ts';
+import type { ArchivedBy, ArchiveVerdict, LibrarianStatus, LooseEnd, MoveBy, Project, QueuedJob, Schedule, ThreadPlace } from './protocol.ts';
+import { messageBy, messageMoveText, updateMoveText } from './place-moves.ts';
 import { Projects } from './projects.ts';
 import type { Settings } from './settings.ts';
 import type {
@@ -1677,6 +1678,30 @@ export class Runner {
     return sortByActivity(out);
   }
 
+  // Where the thread is, as a move in its transcript names it.
+  place(rec: ThreadRecord): ThreadPlace {
+    const b = this.bucket(rec);
+    return b === 'snoozed' ? 'hibernating' : b;
+  }
+
+  // threads.update moved it to or from hibernating or the archive, or
+  // changed when it wakes: a line in the transcript says when and who.
+  private noteMove(st: ThreadState, params: Parameters<Runner['update']>[0], from: ThreadPlace, snoozedAt: string | undefined, untilBefore: string | undefined): void {
+    if (params.moveNote === false) return;
+    const { rec } = st;
+    const to = this.place(rec);
+    const rewoken = from === 'hibernating' && to === 'hibernating' && params.snoozedUntil != null && rec.snoozedUntil !== untilBefore;
+    if (from === to && !rewoken) return;
+    const by: MoveBy = params.moveNote?.by ?? (to === 'archived' && params.archivedBy ? params.archivedBy : params.byAgent ? 'agent' : 'mike');
+    const until = to === 'hibernating' && params.snoozedUntil != null && !rec.wakeWhen ? params.snoozedUntil : undefined;
+    const verdict = to === 'archived' ? rec.archiveVerdict : undefined;
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const awayMs = snoozedAt ? this.clock.now() - Date.parse(snoozedAt) : undefined;
+    const text = params.moveNote?.text ?? (verdict ? ARCHIVE_NOTES[verdict] : updateMoveText({ from, to, by, ...(until ? { until } : {}), ...(awayMs !== undefined ? { awayMs } : {}) }, timeZone));
+    const at = until && until !== 'restart' && until !== 'release' ? rec.snoozedUntil : undefined;
+    this.emit(st, { type: 'system.note', text, move: { from, to, by, ...(at ? { until: at } : {}) } });
+  }
+
   bucket(rec: ThreadRecord): 'inbox' | 'snoozed' | 'archived' {
     if (rec.archivedAt) return 'archived';
     if (rec.snoozedUntil && Date.parse(rec.snoozedUntil) > this.clock.now()) return 'snoozed';
@@ -1954,6 +1979,13 @@ export class Runner {
     // if it ends with nothing for Mike (the end of the turn, below).
     if (rec.archivedAt && opts.origin === 'schedule') rec.unarchivedBySchedule = { by: rec.archivedBy };
     if (fromMike(text, opts)) delete rec.unarchivedBySchedule;
+    // Said in the transcript, before the message, with who sent it (place-moves.ts).
+    const from = this.place(rec);
+    if (from !== 'inbox') {
+      const by = messageBy(text, opts.origin);
+      const awayMs = from === 'hibernating' && rec.snoozedAt ? this.clock.now() - Date.parse(rec.snoozedAt) : undefined;
+      this.emit(st, { type: 'system.note', text: messageMoveText(from, by, opts.origin, awayMs), move: { from, to: 'inbox', by } });
+    }
     if (rec.snoozedUntil || rec.archivedAt) {
       delete rec.snoozedUntil;
       delete rec.snoozedUntilRestart;
@@ -3239,8 +3271,7 @@ export class Runner {
       if (!goingOn || rec.archivedAt) delete rec.unarchivedBySchedule;
       else if (!rec.queue.length && !rt.turn && finished && !review && !rec.labReviewOwed && !this.stopping) {
         delete rec.unarchivedBySchedule;
-        this.emit(st, { type: 'system.note', text: 'Back in the archive: the scheduled run ended with nothing for you.' });
-        this.update({ threadId: rec.id, archived: true, archivedBy: by ?? 'threadbear' });
+        this.update({ threadId: rec.id, archived: true, archivedBy: by ?? 'threadbear', moveNote: { by: 'schedule', text: 'Back in the archive: the scheduled run ended with nothing for you.' } });
       }
       this.markDirty(st);
     }
@@ -3254,8 +3285,7 @@ export class Runner {
       void this.guessInbox(st, turn.lastText ?? '', Boolean(said?.next?.length));
     }
     if (archive && !rt.turn && !rec.archivedAt && !this.stopping) {
-      this.emit(st, { type: 'system.note', text: 'Archived, as the agent was asked to once it had finished.' });
-      this.update({ threadId: rec.id, archived: true, archivedBy: 'agent' });
+      this.update({ threadId: rec.id, archived: true, archivedBy: 'agent', moveNote: { text: 'Archived, as the agent was asked to once it had finished.' } });
     }
     if (waitFor && !rt.turn && !rec.archivedAt && !this.stopping) this.waitOn(st, waitFor, snooze, turn.endTurnBy);
     else if (snooze && !rt.turn && !rec.archivedAt && !this.stopping) this.snoozeAfterTurn(st, snooze);
@@ -3300,8 +3330,7 @@ export class Runner {
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const text = until === 'restart' ? 'Hibernating until the runner next starts, as the agent was asked to.'
       : until === 'release' ? 'Hibernating until the runner starts on a new release, as the agent was asked to.' : `Hibernating until ${localWhen(Date.parse(until), timeZone)}, as the agent was asked to.`;
-    this.emit(st, { type: 'system.note', text });
-    this.update({ threadId: rec.id, snoozedUntil: until });
+    this.update({ threadId: rec.id, snoozedUntil: until, moveNote: { by: 'agent', text } });
   }
 
   endTurn(st: ThreadState, completedSeq: number, status: ThreadStatus, outcome?: TurnOutcome, limitHit?: string, netLost?: string, holdQueue = false, signedOut?: string): void {
@@ -3665,6 +3694,10 @@ export class Runner {
     // With poolId: the provider picked in the menu (its column), for a
     // pool with logins of both. Else the model's, else the thread's own.
     provider?: Provider;
+    // Not from a client: the line a move to or from hibernating or the
+    // archive leaves in the transcript (place-moves.ts). `by` and `text` replace
+    // the ones worked out here; false when the caller writes its own.
+    moveNote?: { by?: MoveBy; text?: string } | false;
   }): { thread: ThreadSummary } {
     const st = this.mustGet(params.threadId);
     const { rec, rt } = st;
@@ -3863,6 +3896,9 @@ export class Runner {
         rt.turn?.turnId,
       );
     }
+    const placeBefore = this.place(rec);
+    const snoozedAtBefore = rec.snoozedAt;
+    const untilBefore = rec.snoozedUntil;
     if (params.snoozedUntil !== undefined) {
       // Kept through a change of wake time, so the note on waking counts
       // from when it first went away.
@@ -3901,8 +3937,9 @@ export class Runner {
         // His putting away a finished thread, with or without a pick from
         // the Archive menu, is what the inbox guess is scored against.
         if (archiving && by === 'mike') this.noteInboxArchive(st, this.looseEndsCard(st), verdict);
-        // Said in the thread, for the agent or a sweeper reading it later.
-        if (verdict && (archiving || verdict !== rec.archiveVerdict)) this.emit(st, { type: 'system.note', text: ARCHIVE_NOTES[verdict] });
+        // Said in the thread, for the agent or a sweeper reading it later
+        // (archiving says it with the move, below).
+        if (verdict && !archiving && verdict !== rec.archiveVerdict) this.emit(st, { type: 'system.note', text: ARCHIVE_NOTES[verdict] });
         rec.archivedAt = this.isoNow();
         rec.archivedBy = by;
         if (verdict) rec.archiveVerdict = verdict;
@@ -3915,6 +3952,7 @@ export class Runner {
         delete rec.archivedAt;
       }
     }
+    this.noteMove(st, params, placeBefore, snoozedAtBefore, untilBefore);
     if (archiving) {
       this.reconcileWaits();
       this.recheckStarter(st);

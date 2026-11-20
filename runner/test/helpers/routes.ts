@@ -77,6 +77,8 @@ export type Play = {
   earlyStop(): void;
   /** The thread's login ran out and the runner moved it to another (runner/pools.ts moveLogin). */
   loginMoved(): void;
+  /** Mike hibernates, wakes, archives or unarchives it (threads.update). */
+  move(u: { snoozedUntil?: string | null; archived?: boolean }): void;
   /** The agent's tool call asks, with the runner's reason and source, and the card stays open. */
   askApproval(req: { name: string; title: string; input: Record<string, unknown>; reason?: string; source?: ApprovalSource }): void;
 };
@@ -227,6 +229,9 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
         const st = h.runner.threads.get(thread.id)!;
         h.runner.moveLogin(st, { id: 'claude-1', title: 'alex@example.org', provider: 'claude' } as never, 'alex@example.net hit its 5-hour limit, back at 11:30 am');
       },
+      move: (u) => {
+        h.runner.update({ threadId: thread.id, ...u });
+      },
       send: (text, images = []) => {
         h.runner.send(thread.id, text, images, {});
         h.adapter.last.init();
@@ -282,9 +287,10 @@ function plansOf(events: Record<string, any>[]): string[] {
     });
 }
 
-// A login's notes (system.note with `login`), as their words.
+// The notes that go to every surface (system.note with `login`,
+// `savedMessage` or `move`), as their words.
 function loginNotes(events: Record<string, any>[]): string[] {
-  return events.filter((e) => e.type === 'system.note' && (e.login === true || e.savedMessage === true)).map((e) => String(e.text));
+  return events.filter((e) => e.type === 'system.note' && (e.login === true || e.savedMessage === true || e.move)).map((e) => String(e.text));
 }
 
 function lastFailed(events: Record<string, any>[]): boolean {

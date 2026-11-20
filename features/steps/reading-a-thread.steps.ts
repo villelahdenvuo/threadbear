@@ -180,3 +180,9 @@ Then('each wait line\'s words are one line inside its own row', async function (
     assert.ok(top >= 0 && top + height <= row.height!, `"${gap.text.slice(0, 40)}" is drawn from ${top} to ${top + height} in a row ${row.height} tall`);
   }
 });
+
+// A move between the inbox, hibernating and the archive (docs/protocol.md,
+// "Moves in the transcript"): a row of its own, never folded into the work.
+Then('the transcript has a line across it saying {string}', async function (this: ThreadbearWorld, words: string) {
+  await this.until(`a move line "${words}"`, (d) => d.transcript.rows.some((r) => r.kind === 'note' && !r.inGroup && r.text.startsWith(words)));
+});

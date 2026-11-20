@@ -1377,6 +1377,11 @@ impl TranscriptModel {
                 self.append(Row::new(&format!("n:{seq}"), seq, turn_id, RowContent::Note(text.clone())));
             }
 
+            EventPayload::MoveNote(note) => {
+                let note = MoveNote { at: event.ts.clone(), ..note.clone() };
+                self.append(Row::new(&format!("n:{seq}"), seq, turn_id, RowContent::Move(note)));
+            }
+
             EventPayload::Error(message) => {
                 let id = format!("e:{seq}");
                 self.append(Row::new(&id, seq, turn_id.clone(), RowContent::Error { message: message.clone(), kind: None }));

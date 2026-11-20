@@ -1578,6 +1578,10 @@ pub enum EventPayload {
     TurnStarted { woke_by: Vec<BackgroundTask> },
     TurnCompleted(TurnCompletion),
     SystemNote(String),
+    /// A `system.note` with a `move`: the thread moved between the inbox,
+    /// hibernating and the archive (docs/protocol.md, "Moves in the
+    /// transcript").
+    MoveNote(MoveNote),
     Error(String),
     ActionRun(ActionRun),
     /// The ticks on the card of asks that came with the turn.completed at
@@ -1742,7 +1746,10 @@ fn decode_payload(type_: &str, c: &Object) -> Result<EventPayload, ()> {
             EventPayload::TurnStarted { woke_by }
         }
         "turn.completed" => EventPayload::TurnCompleted(TurnCompletion::decode(c)),
-        "system.note" => EventPayload::SystemNote(TextFields::decode(c).text),
+        "system.note" => match c.get("move").and_then(Value::as_object) {
+            Some(m) => EventPayload::MoveNote(MoveNote::decode(&TextFields::decode(c).text, m)),
+            None => EventPayload::SystemNote(TextFields::decode(c).text),
+        },
         "error" => {
             let f = TextFields::decode(c);
             EventPayload::Error(f.message.or_else(|| string(c, "text")).unwrap_or_else(|| "Something went wrong".to_owned()))
@@ -1895,4 +1902,58 @@ mod tests {
         assert_eq!(ask.action, "Backfill prod?");
         assert_eq!(ask.options, vec!["Yes".to_owned(), "No".to_owned()]);
     }
+}
+
+/// Where a thread went, as its transcript records it: the runner's words,
+/// where it came from and went to (`inbox`, `hibernating`, `archived`), and
+/// who moved it. `at` is the event's time, set when the row is made.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MoveNote {
+    pub text: String,
+    pub from: String,
+    pub to: String,
+    pub by: String,
+    pub at: String,
+}
+
+impl MoveNote {
+    fn decode(text: &str, m: &Object) -> MoveNote {
+        let field = |k: &str| string(m, k).unwrap_or_default();
+        MoveNote { text: text.to_owned(), from: field("from"), to: field("to"), by: field("by"), at: String::new() }
+    }
+
+    /// When it moved, as the divider says it: "Thu 20 Nov, 2:32 pm". Empty
+    /// for a time it can't read.
+    pub fn when<Tz: chrono::TimeZone>(&self, tz: &Tz) -> String {
+        match chrono::DateTime::parse_from_rfc3339(&self.at) {
+            Ok(at) => {
+                let at = at.with_timezone(tz);
+                at.naive_local().format("%a %-d %b, ").to_string() + &crate::schedules::time_of_day(&at)
+            }
+            Err(_) => String::new(),
+        }
+    }
+
+    /// The same in full, for its tooltip: "20 Nov 2026 at 2:32 pm".
+    pub fn full_when<Tz: chrono::TimeZone>(&self, tz: &Tz) -> String {
+        chrono::DateTime::parse_from_rfc3339(&self.at).map(|at| crate::schedules::full_time(at.timestamp_millis(), tz)).unwrap_or_default()
+    }
+
+    /// Which icon the divider shows: a sun for waking, else where it went.
+    pub fn icon(&self) -> MoveIcon {
+        match (self.from.as_str(), self.to.as_str()) {
+            (_, "hibernating") => MoveIcon::Hibernate,
+            (_, "archived") => MoveIcon::Archive,
+            ("hibernating", _) => MoveIcon::Wake,
+            _ => MoveIcon::Inbox,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveIcon {
+    Hibernate,
+    Wake,
+    Archive,
+    Inbox,
 }

@@ -1048,6 +1048,7 @@ async function dispatch(client, method, p) {
       if (p.detached === false) delete s.detached;
       if (p.model !== undefined) s.model = p.model ?? undefined;
       if (p.effort !== undefined) s.effort = p.effort ?? undefined;
+      const placeBefore = placeOf(s);
       if (p.snoozedUntil !== undefined) {
         // "restart": until the runner next starts, as the runner keeps it.
         const untilRestart = p.snoozedUntil === 'restart';
@@ -1074,6 +1075,16 @@ async function dispatch(client, method, p) {
       }
       if (p.starred === true) s.starredAt ??= iso();
       else if (p.starred === false) delete s.starredAt;
+      // As the runner does: a line in the transcript for each move
+      // (docs/protocol.md, "Moves in the transcript").
+      const placeAfter = placeOf(s);
+      if (placeAfter !== placeBefore) {
+        const by = p.byAgent ? 'an agent' : 'you';
+        const text = placeAfter === 'hibernating' ? `Hibernated by ${by} until ${new Date(s.snoozedUntil).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true })}.`
+          : placeAfter === 'archived' ? `Archived by ${by}.`
+          : placeBefore === 'archived' ? `Unarchived by ${by}.` : `Woken by ${by}.`;
+        persist(s.id, { type: 'system.note', text, move: { from: placeBefore, to: placeAfter, by: p.byAgent ? 'agent' : 'mike' } });
+      }
       s.updatedAt = iso();
       broadcastSummary(s.id);
       return { thread: s };
@@ -2937,6 +2948,12 @@ function updateReviewCount(t) {
 
 // ---------------------------------------------------------------- events
 
+// Where a thread is, as a move in its transcript names it.
+function placeOf(s) {
+  if (s.archivedAt) return 'archived';
+  return s.snoozedUntil && Date.parse(s.snoozedUntil) > Date.now() ? 'hibernating' : 'inbox';
+}
+
 function persist(threadId, fields, turnId) {
   const t = threads.get(threadId);
   const s = t.summary;
@@ -3245,7 +3262,7 @@ function scheduleWake(threadId) {
       s.needsYou = true;
       // As the runner does: a note in the thread, and "Woke up" on the row
       // until it's opened.
-      persist(threadId, { type: 'system.note', text: 'Woke up from hibernating.' });
+      persist(threadId, { type: 'system.note', text: 'Woke up from hibernating.', move: { from: 'hibernating', to: 'inbox', by: 'threadbear' } });
       s.woke = { at: iso(), ...(s.snoozedAt ? { since: s.snoozedAt } : {}) };
       delete s.snoozedAt;
       broadcastSummary(threadId);

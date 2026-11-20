@@ -1,6 +1,7 @@
 // Finding the step a `work:` link quotes: the part of Transcript/WorkLinks.swift
 // the reducer's `workStep` uses. The regular expressions in the Swift are
 // written out by hand, as this crate has no regex dependency.
+use super::event::MoveNote;
 use super::row::{Row, RowContent};
 use super::text;
 use serde_json::Value;
@@ -85,7 +86,7 @@ fn score(row: &Row, q: &str) -> i32 {
                 0
             }
         }
-        RowContent::Note(note) => {
+        RowContent::Note(note) | RowContent::Move(MoveNote { text: note, .. }) => {
             if normal(note).contains(q) {
                 3
             } else {

@@ -95,7 +95,10 @@ export const reviewsPart = {
     const message: QueuedSend = {turnId, text: reviewReply(review, draft), images: draft.images ?? [], reviewId, reviewResponse: draft};
     // The answer and outbox live in one atomic thread.json write. Publish
     // the card only after it succeeds, then start the queued reply.
+    const from = this.place(st.rec);
     this.persistReview(st, next, [...st.rec.queue, message], true);
+    // Said in the transcript, as a message bringing it back is (place-moves.ts).
+    if (from !== 'inbox') this.emit(st, {type: 'system.note', text: from === 'archived' ? 'Back from the archive for your answer to a review.' : 'Woke up for your answer to a review.', move: {from, to: 'inbox', by: 'mike'}});
     st.rt.releaseWhenIdle = false;
     this.markDirty(st);
     this.kickQueue(st);
