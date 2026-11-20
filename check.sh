@@ -160,6 +160,8 @@ fi
 # The check host: THREADBEAR_CHECK_HOST (set and empty means none), or
 # runner.json's checkHost. Read before the THREADBEAR_* names go below.
 RUNNER_JSON="${THREADBEAR_HOME:-$HOME/Library/Application Support/Threadbear}/runner.json"
+# Whether a runner home other than the real one was given (tests, a dev runner).
+HOME_GIVEN="${THREADBEAR_HOME:-}"
 if [ "$LOCAL" = 0 ] && [ "$E2E" = 0 ]; then
   configured_hosts() {
     [ -x "$NODE" ] && [ -f "$RUNNER_JSON" ] && "$NODE" -e '
@@ -233,6 +235,33 @@ fi
 export PATH="$(dirname "$NODE"):$PATH"
 export THREADBEAR_NODE="$NODE"
 FALLBACK="${THREADBEAR_CHECK_FALLBACK:-}"
+
+# Two runner.json switches for a Mac with no check host, where every check
+# (tb land's included) runs on the Mac someone is working on:
+#   "checkSwiftApp": false   never build or test the frozen Swift app, for
+#                            someone who only runs the GPUI app (Ville, 20
+#                            Nov 2026: a landing built the Swift app in
+#                            release and ran its tests, "what a waste").
+#                            --app and --all still do.
+#   "checkSharedTarget": false  keep cargo's build folder in each checkout.
+# Otherwise a run here builds the desktop app in one build folder kept
+# between runs and shared by every checkout, as a check host does
+# (scripts/check-remote.sh): tb land checks in a checkout of its own, whose
+# empty desktop/target meant building every crate GPUI needs from cold each
+# time. cargo_step (below) touches what changed, so a shared folder can't
+# pass a build it didn't make. CARGO_TARGET_DIR set by the caller wins.
+runner_json_flag() {
+  [ -x "$NODE" ] && [ -f "$RUNNER_JSON" ] && "$NODE" -e '
+    try { const v = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))[process.argv[2]]; if (typeof v === "boolean") console.log(v) } catch {}' "$RUNNER_JSON" "$1"
+}
+SWIFT_OFF=0
+[ "$(runner_json_flag checkSwiftApp)" = false ] && SWIFT_OFF=1
+# Only for the real runner's checks: a test's run of this script has a temp
+# THREADBEAR_HOME, and its fake builds mustn't write the shared folder's
+# records of what was built.
+if [ -z "${CARGO_TARGET_DIR:-}" ] && [ -z "$HOME_GIVEN" ] && [ "$(runner_json_flag checkSharedTarget)" != false ]; then
+  export CARGO_TARGET_DIR="$HOME/Library/Caches/Threadbear/check-desktop-target" THREADBEAR_CHECK_SHARED_TARGET=1
+fi
 # Inside a Threadbear thread these name the live runner and the thread.
 # Every test makes its own temp data dir; none may find the real one.
 # THREADBEAR_CHECK_BUSY_EXIT is only for sending this run to a host: the
@@ -281,7 +310,10 @@ GPUI_SHARED="$("$ROOT/scripts/swift-freeze.sh" --gpui-shared 2>/dev/null)"
 # line, and every change would look like none.
 [ -n "$GPUI_SHARED" ] || GPUI_SHARED='^$'
 swift_needed() {
-  [ "$ALL" = 1 ] || [ "$APP_ONLY" = 1 ] \
+  [ "$ALL" = 1 ] || [ "$APP_ONLY" = 1 ] || { [ "$SWIFT_OFF" = 0 ] && swift_changed "$@"; }
+}
+swift_changed() {
+  false \
     || printf '%s\n' "$CHANGED" | grep -vE "$GPUI_SHARED" | grep -E "${1:-^(app|dock)/}" >/dev/null
 }
 
@@ -680,7 +712,7 @@ fi
 # build the Swift app). The full check's own app tests cover them when it
 # runs those. Not on main with nothing changed, as swift_needed.
 read -r -d '' SWIFT_MOCK_NEEDS SWIFT_MOCK_FILTER < <("$ROOT/scripts/swift-freeze.sh" --mock-tests 2>/dev/null; printf '\0')
-if [ "$RUNNER_ONLY" = 0 ] && [ -n "$SWIFT_MOCK_NEEDS" ] && [ -n "$SWIFT_MOCK_FILTER" ] \
+if [ "$RUNNER_ONLY" = 0 ] && [ "$SWIFT_OFF" = 0 ] && [ -n "$SWIFT_MOCK_NEEDS" ] && [ -n "$SWIFT_MOCK_FILTER" ] \
   && ! { [ "$QUICK" = 0 ] && swift_needed; } \
   && { [ "$ALL" = 1 ] || printf '%s\n' "$CHANGED" | grep -E "$SWIFT_MOCK_NEEDS" >/dev/null; }; then
   # --e2e runs on the Mac someone's working on, for its claude login, and a

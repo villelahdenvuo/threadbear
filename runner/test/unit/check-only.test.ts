@@ -210,3 +210,20 @@ test('a run that is for a check host or nowhere never runs on this Mac', () => {
     fs.rmSync(c.root, { recursive: true, force: true });
   }
 });
+
+test('runner.json\'s checkSwiftApp: false leaves the frozen Swift app out of --quick', () => {
+  const { root, put } = checkout();
+  const changed = path.join(root, '.changed-app');
+  fs.writeFileSync(changed, 'app/Sources/Threadbear/X.swift\nrunner/src/x.ts\n');
+  // The fake swift says it ran; cargo says where it built.
+  put('bin/swift', `#!/bin/bash\necho swift-ran >>"${root}/swift.log"\n`, 0o755);
+  const home = path.join(root, 'Library', 'Application Support', 'Threadbear');
+  const only = { THREADBEAR_CHECK_CHANGED_FILE: changed, THREADBEAR_CHECK_ONLY: 'app release build' };
+  let r = run(root, ['--quick'], only);
+  assert.match(step(r.out, 'app release build') ?? '', /^ok/, r.out);
+  put(path.relative(root, path.join(home, 'runner.json')), JSON.stringify({ checkSwiftApp: false }));
+  fs.rmSync(path.join(root, 'swift.log'), { force: true });
+  r = run(root, ['--quick'], only);
+  assert.match(step(r.out, 'app release build') ?? '', /^skip/, r.out);
+  assert.equal(fs.existsSync(path.join(root, 'swift.log')), false, 'swift never ran');
+});
