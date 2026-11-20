@@ -27,7 +27,8 @@ const MIN_TEXT = 40;
 const MAX_FLAGGED = 500;
 const RUN_TIMEOUT_MS = 5 * 60_000;
 const BUILD_TIMEOUT_MS = 5 * 60_000;
-const TASKPOLICY = '/usr/sbin/taskpolicy';
+// nice, never background priority (Ville, 20 Nov 2026: far too slow).
+const NICE = '/usr/bin/nice';
 
 export type FlaggedItem = { threadId: string; seq: number; source: 'text' | 'image'; at: string };
 export type SecretCheckCounts = {
@@ -75,7 +76,7 @@ function realBuild(source: string, out: string, signal?: AbortSignal): Promise<v
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const tmp = `${out}.${process.pid}.tmp`;
   return new Promise((resolve, reject) => {
-    execFile(TASKPOLICY, ['-b', '/usr/bin/xcrun', 'swiftc', '-O', '-o', tmp, source], { timeout: BUILD_TIMEOUT_MS, ...(signal ? { signal } : {}) }, (err) => {
+    execFile(NICE, ['-n', '10', '/usr/bin/xcrun', 'swiftc', '-O', '-o', tmp, source], { timeout: BUILD_TIMEOUT_MS, ...(signal ? { signal } : {}) }, (err) => {
       if (err) {
         fs.rmSync(tmp, { force: true });
         reject(new Error('swiftc failed'));
@@ -101,7 +102,7 @@ function realOnAC(): Promise<boolean> {
 
 function realRun(helper: string, jobs: string[], signal: AbortSignal): Promise<RunVerdict[]> {
   return new Promise((resolve) => {
-    const child = spawn(TASKPOLICY, ['-b', helper], { stdio: ['pipe', 'pipe', 'ignore'], signal });
+    const child = spawn(NICE, ['-n', '10', helper], { stdio: ['pipe', 'pipe', 'ignore'], signal });
     const out: RunVerdict[] = [];
     let buffer = '';
     const timer = setTimeout(() => child.kill(), RUN_TIMEOUT_MS);

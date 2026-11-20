@@ -37,9 +37,8 @@ checkout is the one with `main` checked out.
 runner's own update builds, so a land's test suite doesn't take the Mac
 over: `nice -n 10` by default, or as runner.json's `jobPriority` says
 (`normal`, or `background` for macOS's `taskpolicy -b`, which Mike's
-runners use; `runner/src/background.ts`). The app's update build runs at
-background priority, or under `nice -n 10` on a Mac with few efficiency
-cores (`AppUpdate.swift`). Action buttons you press run as normal.
+runners use; `runner/src/background.ts`). The app's update build follows the same
+`jobPriority`: `nice -n 10` unless it says `background`. Action buttons you press run as normal.
 
 ## A new thread
 

@@ -377,18 +377,16 @@ pub fn restart_wait(m: &RestartMoment, why_held: impl FnOnce() -> String) -> Opt
     Some(RestartWait::Countdown((AUTO_RESTART_IDLE_SECONDS - m.idle_for.max(0.)).ceil().max(1.) as u32))
 }
 
-/// The update script's arguments, run at background priority (`taskpolicy
-/// -b`, as Mike asks of every build on his M5): throttled CPU and disk, off
-/// the cores he's using, inherited by everything it starts, the copy to a
-/// build host and back included.
-///
-/// Not on a Mac with few efficiency cores, though: background work runs only
-/// on those, and on Ville's M1 Pro (two) the release build took over an hour,
-/// holding the build lock every thread's builds and tests wait on (12 Nov).
-/// There it's `nice`: every core, giving way to the rest.
-pub fn build_command(script: &str, checkout: &str, next: &str, efficiency_cores: usize) -> (String, Vec<String>) {
+/// The update script's arguments, run at `nice -n 10`: every core, giving
+/// way to what's in use. At background priority (`taskpolicy -b`) only when
+/// runner.json's jobPriority says "background" (Mike's M5, runner/src/
+/// background.ts), and never on a Mac with few efficiency cores, where
+/// background work runs only on those. Background was the default until 20
+/// Nov 2026: on Ville's Mac the release build took 35 minutes at it, against
+/// 75 seconds under nice, and he asked for nice everywhere.
+pub fn build_command(script: &str, checkout: &str, next: &str, efficiency_cores: usize, job_priority: Option<&str>) -> (String, Vec<String>) {
     let script_args = ["/bin/bash", script, checkout, "--next", next].map(String::from);
-    if efficiency_cores < MIN_EFFICIENCY_CORES_FOR_BACKGROUND {
+    if job_priority != Some("background") || efficiency_cores < MIN_EFFICIENCY_CORES_FOR_BACKGROUND {
         return ("/usr/bin/nice".into(), ["-n", "10"].map(String::from).into_iter().chain(script_args).collect());
     }
     ("/usr/sbin/taskpolicy".into(), std::iter::once("-b".to_owned()).chain(script_args).collect())
@@ -483,8 +481,13 @@ mod tests {
     }
 
     #[test]
-    fn the_build_runs_at_background_priority() {
-        let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next", 6);
+    fn the_build_runs_under_nice_unless_runner_json_asks_for_background() {
+        for priority in [None, Some("low"), Some("normal")] {
+            let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next", 6, priority);
+            assert_eq!(program, "/usr/bin/nice");
+            assert_eq!(args, ["-n", "10", "/bin/bash", "/b/stage-update.sh", "/repo", "--next", "/next"]);
+        }
+        let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next", 6, Some("background"));
         assert_eq!(program, "/usr/sbin/taskpolicy");
         assert_eq!(args, ["-b", "/bin/bash", "/b/stage-update.sh", "/repo", "--next", "/next"]);
     }
@@ -494,7 +497,7 @@ mod tests {
     #[test]
     fn few_efficiency_cores_get_nice_instead() {
         for cores in [0, 2] {
-            let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next", cores);
+            let (program, args) = build_command("/b/stage-update.sh", "/repo", "/next", cores, Some("background"));
             assert_eq!(program, "/usr/bin/nice");
             assert_eq!(args, ["-n", "10", "/bin/bash", "/b/stage-update.sh", "/repo", "--next", "/next"]);
         }

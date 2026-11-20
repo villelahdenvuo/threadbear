@@ -256,10 +256,8 @@ fn followable() -> Result<BuildInfo, String> {
 
 /// `tb try` (runner/src/try-ref.ts): a thread's commit Ville wants in his
 /// app before it lands. While it's set and main doesn't have it, the app
-/// builds its desktop/ in place of main's, at once and at full speed: the
-/// two-minute goal (Ville, 20 Nov 2026) has no room for the ten quiet
-/// minutes or a background-priority build (35 minutes on 17 Nov, against 75
-/// seconds at normal priority in a landing's check).
+/// builds its desktop/ in place of main's at once: the two-minute goal
+/// (Ville, 20 Nov 2026) has no room for the ten quiet minutes.
 const TRY_REF: &str = "refs/threadbear/try";
 
 fn git_out(checkout: &str, args: &[&str]) -> Option<String> {
@@ -539,12 +537,11 @@ impl Threadbear {
             return;
         }
         let Some(script) = script() else { return };
-        let (program, arguments) = if trying {
-            let next = next_dir();
-            ("/usr/bin/nice".to_owned(), ["-n", "5", "/bin/bash", &script.to_string_lossy(), &checkout, "--next", &next.to_string_lossy(), "--ref", TRY_REF].map(String::from).to_vec())
-        } else {
-            rules::build_command(&script.to_string_lossy(), &checkout, &next_dir().to_string_lossy(), efficiency_cores())
-        };
+        let priority = self.runner_settings.as_ref().and_then(|s| s["jobPriority"].as_str().map(str::to_owned));
+        let (program, mut arguments) = rules::build_command(&script.to_string_lossy(), &checkout, &next_dir().to_string_lossy(), efficiency_cores(), priority.as_deref());
+        if trying {
+            arguments.extend(["--ref".to_owned(), TRY_REF.to_owned()]);
+        }
         let log = open_log();
         let (out, err) = match log.as_ref().and_then(|l| Some((l.try_clone().ok()?, l.try_clone().ok()?))) {
             Some((a, b)) => (Stdio::from(a), Stdio::from(b)),

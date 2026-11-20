@@ -55,7 +55,9 @@ if [ -n "$build_on" ]; then
   done
 else
   export CARGO_HTTP_MULTIPLEXING=false CARGO_NET_RETRY=10
-  (cd "$root/desktop" && taskpolicy -b "$root/scripts/one-build.sh" cargo build --release -p threadbear-gpui --features "$features")
+  # nice, not taskpolicy -b: background priority took 35 minutes on Ville's
+  # Mac for what nice builds in about 75 seconds (20 Nov 2026).
+  (cd "$root/desktop" && nice -n 10 "$root/scripts/one-build.sh" cargo build --release -p threadbear-gpui --features "$features")
   cp "$root/desktop/target/release/threadbear-gpui" "$root/desktop/target/release/threadbear-web-helper" "$work/"
 fi
 

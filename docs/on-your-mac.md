@@ -429,11 +429,11 @@ File references are where to look.
   `git rev-parse` 20 seconds after it opens, every 5 minutes and within
   seconds of main changing. When that differs from what it runs, it waits
   until that tree has stayed the same for ten minutes, then runs
-  `stage-update.sh` from its own bundle at background priority
-  (`desktop/scripts/stage-update.sh`). On a Mac with fewer than four
-  efficiency cores (it reads `sysctl hw.nperflevels` and
-  `hw.perflevel1.physicalcpu`) it runs it with `nice -n 10` instead, on
-  every core, as background work there runs only on those few. That clones the checkout into
+  `stage-update.sh` from its own bundle under `nice -n 10`
+  (`desktop/scripts/stage-update.sh`). It runs it at background priority
+  only when `runner.json`'s `jobPriority` is `background` and the Mac has at
+  least four efficiency cores (`sysctl hw.nperflevels` and
+  `hw.perflevel1.physicalcpu`). That clones the checkout into
   `~/Library/Caches/Threadbear/update-desktop`, and with `updateBuildHosts` in
   `runner.json` (never `checkHosts`), copies the clone's files (not its history) with rsync over
   ssh to the first of them that's a Mac, answers and is free, builds there under

@@ -305,9 +305,9 @@ function build(opts: { noBuild: boolean; here: boolean; logName: string }): stri
       }
     }
   } else {
-    console.error(`${opts.here ? '' : 'No updateBuildHosts Mac answered, so '}building here, one build at a time and at background priority. Log: ${log}`);
+    console.error(`${opts.here ? '' : 'No updateBuildHosts Mac answered, so '}building here, one build at a time and under nice. Log: ${log}`);
     const target = path.join(CHECKOUT, 'desktop/target');
-    const cmd = [path.join(CHECKOUT, 'scripts/one-build.sh'), ...(process.platform === 'darwin' ? ['taskpolicy', '-b'] : []), 'cargo', 'build', '-p', 'threadbear-gpui', '--features', 'automation'];
+    const cmd = [path.join(CHECKOUT, 'scripts/one-build.sh'), 'nice', '-n', '10', 'cargo', 'build', '-p', 'threadbear-gpui', '--features', 'automation'];
     const fd = fs.openSync(log, 'w');
     const r = spawnSync(cmd[0], cmd.slice(1), { cwd: path.join(CHECKOUT, 'desktop'), stdio: ['ignore', fd, fd] });
     fs.closeSync(fd);
