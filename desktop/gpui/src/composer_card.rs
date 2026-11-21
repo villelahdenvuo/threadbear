@@ -764,18 +764,7 @@ impl Composer {
         // Background work still going (a land, a build, sub-agents): not done
         // yet, whatever the agent said, so no Done and no Archive until it's
         // over (Ville, 12 Nov). What's running is the transcript's last line.
-        if card.still_running() {
-            let mark = crate::icons::symbol("hourglass")
-                .with_size(px(15.))
-                .text_color(style::secondary_text(cx))
-                .into_any_element();
-            column = column.child(
-                h_flex()
-                    .w_full()
-                    .h(px(metrics::PAGED_HEADING))
-                    .child(card_title(mark, 3., "Still running", cx)),
-            );
-        }
+        column = column.when(card.still_running(), |c| c.child(still_running_heading(cx)));
         // Arriving, its tick draws itself on; then it's the tick as ever.
         let green = style::tick_green(cx);
         let tick = match drawing.filter(|at| at.elapsed() < threadbear_core::juice::TICK_DRAW_END) {
@@ -2581,6 +2570,19 @@ pub(crate) mod metrics {
     /// (rowInset), its words past the circle.
     pub const ROW_INSET: f32 = 8.;
     pub const ROW_WORDS: f32 = 34.;
+}
+/// The done card's heading while background work goes on: an hourglass and
+/// "Still running", with no Archive.
+fn still_running_heading(cx: &App) -> AnyElement {
+    let mark = crate::icons::symbol("hourglass")
+        .with_size(px(15.))
+        .text_color(style::secondary_text(cx))
+        .into_any_element();
+    h_flex()
+        .w_full()
+        .h(px(metrics::PAGED_HEADING))
+        .child(card_title(mark, 3., "Still running", cx))
+        .into_any_element()
 }
 
 /// A card's title: its mark, then the words in the title font (14 pt medium),
