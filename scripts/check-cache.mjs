@@ -123,14 +123,14 @@ const under = (...prefixes) => (f) => prefixes.some((p) => (p.endsWith('/') ? f.
 // it's skipped only when nothing at all changed (a rebase with nothing new).
 const STEPS = [
   [/^runner (typecheck|deploy tests)$/, under('runner/')],
-  [/^app tools parse$/, under('app/Tools/')],
+  [/^app tools parse$/, under('app/Tools/', 'mock-runner/')],
   [/^(convex|web) /, (f) => under('convex/', 'web/', 'convex.json')(f) || rootConfig(f)],
   [/^site build$/, under('site/', 'docs/guide.md', 'docs/experiments.md')],
   [/^feature/, (f) => under('features/', 'docs/gpui-port/features.md')(f) || rootConfig(f)],
-  [/^desktop /, under('desktop/', 'features/support/', 'site/app-doc-slugs.json', 'app/Tools/mock-runner/', 'runner/src/',
-    'runner/package.json', 'runner/package-lock.json', 'app/Tests/Fixtures/', 'app/Sources/Threadbear/Resources/')],
-  [/^(app|dock) /, under('app/', 'dock/')],
-  [/^iphone /, under('ios/', 'app/')],
+  [/^desktop /, under('desktop/', 'rust-toolchain.toml', 'features/support/', 'site/app-doc-slugs.json', 'mock-runner/', 'runner/src/',
+    'runner/package.json', 'runner/package-lock.json', 'shared/')],
+  [/^(app|dock) /, under('app/', 'dock/', 'shared/', 'mock-runner/')],
+  [/^iphone /, under('ios/', 'app/', 'shared/')],
 ];
 // Never skipped: installs aren't checks, and the end-to-end tests and the
 // screenshots are asked for to be run.

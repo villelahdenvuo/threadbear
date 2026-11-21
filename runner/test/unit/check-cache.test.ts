@@ -163,8 +163,8 @@ function checkout() {
   put('package.json', JSON.stringify({ scripts: { 'convex:typecheck': 'true', 'web:typecheck': 'true', 'web:test': 'true', lint: 'true', 'lint:files': 'true' } }));
   put('node_modules/.package-lock.json', '{}');
   put('app/Tools/ok.mjs', '');
-  put('app/Tools/mock-runner/ok.mjs', '');
-  put('app/Tools/mock-runner/node_modules/.package-lock.json', '{}');
+  put('mock-runner/ok.mjs', '');
+  put('mock-runner/node_modules/.package-lock.json', '{}');
   put('desktop/.keep', '');
   put('bin/swift', '#!/bin/bash\n', 0o755);
   put('bin/cargo', '#!/bin/bash\n', 0o755);
