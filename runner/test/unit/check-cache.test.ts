@@ -168,7 +168,7 @@ function checkout() {
   put('desktop/.keep', '');
   put('bin/swift', '#!/bin/bash\n', 0o755);
   put('bin/cargo', '#!/bin/bash\n', 0o755);
-  return { root, put, records: path.join(root, '.records') };
+  return { root, put, records: path.join(root, 'Library', 'Caches', 'Threadbear', 'check-passes') };
 }
 
 function run(c: { root: string, records: string }, flags: string[] = ['--quick']) {
@@ -180,7 +180,9 @@ function run(c: { root: string, records: string }, flags: string[] = ['--quick']
   };
   for (const k of Object.keys(env)) if (/^THREAD(BEAR|BARE)_(CHECK_|HOME$)/.test(k) && k !== 'THREADBEAR_CHECK_CHANGED_FILE') delete env[k];
   delete env.NODE_TEST_CONTEXT;
-  env.THREADBEAR_CHECK_PASSES = c.records;
+  // As a thread's tb land runs it: THREADBEAR_HOME is the real one (this
+  // test's HOME's), so the records go in the real folder.
+  env.THREADBEAR_HOME = path.join(c.root, 'Library', 'Application Support', 'Threadbear');
   const r = spawnSync('bash', [path.join(c.root, 'check.sh'), ...flags, '--local'], { env, encoding: 'utf8', timeout: 120_000 });
   return { status: r.status, out: (r.stdout ?? '') + (r.stderr ?? '') };
 }
@@ -194,6 +196,7 @@ test('check.sh skips what passed with the same inputs, says so, and runs what ch
     assert.match(line(first.out, 'web tests'), /^ok/, first.out);
     assert.match(line(first.out, 'runner unit tests'), /^ok/, first.out);
 
+    assert.equal(fs.readdirSync(path.join(c.records, 'tests')).length, 2, 'both test files recorded');
     const again = run(c);
     assert.equal(again.status, 0, again.out);
     assert.match(line(again.out, 'web tests'), /^ok\s+web tests\s+0s  \(skipped: passed with the same inputs \d\d \w+ \d\d:\d\d on a copy\)$/, again.out);

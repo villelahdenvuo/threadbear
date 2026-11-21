@@ -389,7 +389,8 @@ PASSES_READ=1
 if [ -f "$ROOT/scripts/check-cache.mjs" ] && [ "${THREADBEAR_CHECK_PASSES:-}" != off ] && [ "$(runner_json_flag checkPasses)" != false ]; then
   if [ -n "${THREADBEAR_CHECK_PASSES:-}" ]; then
     PASSES="$THREADBEAR_CHECK_PASSES"
-  elif [ -z "$HOME_GIVEN" ]; then
+  # (A thread's tb land has THREADBEAR_HOME set to the real one.)
+  elif [ -z "$HOME_GIVEN" ] || [ "$HOME_GIVEN" = "$HOME/Library/Application Support/Threadbear" ]; then
     PASSES="$HOME/Library/Caches/Threadbear/check-passes"
   fi
 fi
