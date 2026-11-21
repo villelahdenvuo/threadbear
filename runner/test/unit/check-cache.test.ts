@@ -171,7 +171,7 @@ function checkout() {
   return { root, put, records: path.join(root, 'Library', 'Caches', 'Threadbear', 'check-passes') };
 }
 
-function run(c: { root: string, records: string }, flags: string[] = ['--quick']) {
+function run(c: { root: string, records: string }, flags: string[] = ['--quick'], extra: NodeJS.ProcessEnv = {}) {
   const list = path.join(c.root, '.changed');
   fs.writeFileSync(list, 'runner/src/one.ts\n');
   const env: NodeJS.ProcessEnv = {
@@ -183,6 +183,7 @@ function run(c: { root: string, records: string }, flags: string[] = ['--quick']
   // As a thread's tb land runs it: THREADBEAR_HOME is the real one (this
   // test's HOME's), so the records go in the real folder.
   env.THREADBEAR_HOME = path.join(c.root, 'Library', 'Application Support', 'Threadbear');
+  Object.assign(env, extra);
   const r = spawnSync('bash', [path.join(c.root, 'check.sh'), ...flags, '--local'], { env, encoding: 'utf8', timeout: 120_000 });
   return { status: r.status, out: (r.stdout ?? '') + (r.stderr ?? '') };
 }
@@ -225,6 +226,15 @@ test('check.sh skips what passed with the same inputs, says so, and runs what ch
     assert.match(line(all.out, 'web tests'), /^ok\s+web tests\s+\d+s$/, all.out);
     assert.match(line(all.out, 'runner unit tests'), /^ok/, all.out);
     assert.doesNotMatch(all.out, /skipped \d+ test files/);
+
+    // --fresh (tb land --full) runs everything again without --all's extra
+    // steps, the same through THREADBEAR_CHECK_FRESH, and still records.
+    for (const fresh of [run(c, ['--quick', '--fresh']), run(c, ['--quick'], { THREADBEAR_CHECK_FRESH: '1' })]) {
+      assert.equal(fresh.status, 0, fresh.out);
+      assert.match(line(fresh.out, 'web tests'), /^ok\s+web tests\s+\d+s$/, fresh.out);
+      assert.doesNotMatch(fresh.out, /skipped/, fresh.out);
+    }
+    assert.match(line(run(c).out, 'web tests'), /skipped: passed/);
 
     // A change to the check itself runs everything again.
     fs.appendFileSync(path.join(c.root, 'check.sh'), '\n');

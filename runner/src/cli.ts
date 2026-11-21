@@ -156,14 +156,15 @@ const HELP = `tb: talk to the Threadbear runner
   tb models try <job> "text" [--labels a,b] [--field name=description]... [--system S] [--cwd DIR]
                                   one call by hand: classify (--labels), extract (--field),
                                   summarize or generate. It spends like any other
-  tb land [--dry-run] [--despite-red]
+  tb land [--dry-run] [--despite-red] [--full]
                                   in a thread's own worktree: rebase its branch on main, run
                                   the repo's check, then move main to it (and push it, only in a
                                   repo listed in runner.json's pushAfterLanding);
                                   --dry-run stops before main moves. A GitHub workflow
                                   marked "# tb land: hold while red" holds the landings it
                                   would run for while it's red on main; --despite-red
-                                  lands anyway, for the fix
+                                  lands anyway, for the fix. --full runs every step, even
+                                  those that passed before with the same files
   tb try [off|status]             in a thread's worktree of Threadbear: put its last commit in
                                   the running runner and app in place of main, before it lands
                                   (about 2 minutes; checks run at tb land). Landing it, or
@@ -237,7 +238,7 @@ const COMMAND_FLAGS: Record<string, string[]> = {
   export: ['out'],
   rpc: [],
   queued: ['what', 'behind', 'pid', 'done'],
-  land: ['dry-run', 'despite-red'],
+  land: ['dry-run', 'despite-red', 'full'],
   try: [],
   runner: ['ssh', 'out', 'id', 'json', 'finish', 'replace', 'drop', 'snapshot', 'keys-checked', 'lock-out', 'purge'],
 };
@@ -310,7 +311,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === 'land') {
     const worker = landWorker();
     if (!worker && detachable()) return landInBackground(argv);
-    return landCommand(cfg, Boolean(values['dry-run']), Boolean(values['despite-red']), worker?.onLocked);
+    return landCommand(cfg, Boolean(values['dry-run']), Boolean(values['despite-red']), worker?.onLocked, Boolean(values.full));
   }
   // tb runner uses this Mac's keys straight from disk, so the runner never
   // sees them to refuse them (tb-connect.ts).
@@ -396,7 +397,7 @@ export async function reportQueued(cfg: ReturnType<typeof loadConfig>, threadId:
 // worktrees of their own with its THREADBEAR_THREAD_ID, and went for the
 // parent's (GPUI port thread, 11 Nov). The check is the one in that
 // worktree's own patch, so a branch that changes it lands under its own.
-async function landCommand(cfg: ReturnType<typeof loadConfig>, dryRun: boolean, despiteRed = false, onLocked?: () => boolean): Promise<number> {
+async function landCommand(cfg: ReturnType<typeof loadConfig>, dryRun: boolean, despiteRed = false, onLocked?: () => boolean, full = false): Promise<number> {
   const here = process.cwd();
   let target: Omit<LandTarget, 'check'> | undefined;
   let from = here;
@@ -446,6 +447,8 @@ async function landCommand(cfg: ReturnType<typeof loadConfig>, dryRun: boolean, 
     readCheck: async () => (await findWorktreePatch(from, undefined, undefined, undefined, TRUST_ALL, true))?.check,
     // A workflow red on main holds what it would run for (land-gate.ts).
     despiteRed,
+    // The whole check, no step skipped for having passed before.
+    full,
     hold: (root, files) => { const dir = gateCacheDir(root); return landHold(root, files, (line) => console.log(line), gh, dir ? { dir } : undefined); },
     // Main goes to GitHub once it has landed, on the owner's Mac only.
     push: !dryRun && pushAfterLanding(cfg.home, target.mainCheckout),

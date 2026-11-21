@@ -3,7 +3,7 @@
 # what failed and the end of the log for each step that failed, and a
 # nonzero exit if any did.
 #
-#   ./check.sh [--quick | --runner | --app] [--all] [--e2e] [--shots DIR] [--local]
+#   ./check.sh [--quick | --runner | --app] [--all] [--fresh] [--e2e] [--shots DIR] [--local]
 #
 # With a check host set (THREADBEAR_CHECK_HOST, or "checkHost" in the
 # runner's runner.json, an ssh host such as "tinker-desk"; or "checkHosts",
@@ -36,6 +36,7 @@
 #                 or not
 #   --all         don't skip the Swift app, dock and deploy tests (below),
 #                 nor anything that passed before (next)
+#   --fresh       don't skip anything that passed before, and nothing more
 #
 # A step, or one of the runner's unit test files, that passed before with
 # exactly the same inputs is skipped, and its ok line says when it passed
@@ -45,6 +46,8 @@
 # them too. The records are kept a week, in
 # ~/Library/Caches/Threadbear/check-passes (THREADBEAR_CHECK_PASSES names
 # another folder, or "off"; runner.json's "checkPasses": false turns it off).
+# --fresh (tb land --full, THREADBEAR_CHECK_FRESH=1) reads none of them and
+# runs every step it otherwise would, still recording what passes.
 #
 # When up to 8 of the runner's unit test files fail, those run again on
 # their own, one at a time, and a pass then counts: the step's line lists
@@ -100,6 +103,7 @@ QUICK=0
 RUNNER_ONLY=0
 APP_ONLY=0
 ALL=0
+FRESH=0
 E2E=0
 SHOTS=""
 LOCAL=0
@@ -118,6 +122,11 @@ if [ "${THREADBEAR_CHECK_ALL:-}" = 1 ]; then
   set -- "$@" --all
 fi
 unset THREADBEAR_CHECK_ALL
+# And --fresh: tb land --full, the whole check again with no pass records.
+if [ "${THREADBEAR_CHECK_FRESH:-}" = 1 ]; then
+  set -- "$@" --fresh
+fi
+unset THREADBEAR_CHECK_FRESH
 ARGS=("$@")
 
 while [ $# -gt 0 ]; do
@@ -126,6 +135,7 @@ while [ $# -gt 0 ]; do
     --runner) QUICK=1; RUNNER_ONLY=1 ;;
     --app) APP_ONLY=1 ;;
     --all) ALL=1 ;;
+    --fresh) FRESH=1 ;;
     --e2e) E2E=1 ;;
     --local) LOCAL=1 ;;
     --shots)
@@ -386,6 +396,7 @@ FAILED=""
 PASSES=""
 PASSES_READ=1
 [ "$ALL" = 0 ] || PASSES_READ=0
+[ "$FRESH" = 0 ] || PASSES_READ=0
 if [ -f "$ROOT/scripts/check-cache.mjs" ] && [ "${THREADBEAR_CHECK_PASSES:-}" != off ] && [ "$(runner_json_flag checkPasses)" != false ]; then
   if [ -n "${THREADBEAR_CHECK_PASSES:-}" ]; then
     PASSES="$THREADBEAR_CHECK_PASSES"

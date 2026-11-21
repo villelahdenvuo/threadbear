@@ -479,8 +479,11 @@ ok    runner unit tests      94s  (skipped 301 test files that passed with what 
   everything.
 - A failed run still records the files that passed, so the next check runs
   the ones that failed and whatever changed since, with no `--only`.
-- `--all` reads no records (it still writes them). A record past a week
-  doesn't count, so whatever a key misses runs again within a week anyway.
+- `--all` reads no records (it still writes them). Nor does `--fresh`,
+  which runs no more than the check would otherwise: `tb land --full` asks
+  for it (`THREADBEAR_CHECK_FRESH=1`), for a pass you don't want taken on a
+  record's word. A record past a week doesn't count, so whatever a key
+  misses runs again within a week anyway.
 - The records are in `~/Library/Caches/Threadbear/check-passes`, shared by
   every checkout, and on a check host in its own. `THREADBEAR_CHECK_PASSES`
   names another folder or says `off`; `"checkPasses": false` in runner.json
