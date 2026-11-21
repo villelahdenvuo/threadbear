@@ -1,4 +1,4 @@
-// GitHub Actions runs a thread set off (experiment ciRuns; docs/protocol.md,
+// GitHub Actions runs a thread set off (experiment ciRuns; docs/protocol/panels.md,
 // "Highlights", Runs). The commits a thread pushed and the workflows it
 // started with `gh workflow run` are found with its highlights
 // (highlights.ts); this asks the `gh` CLI, on the user's own login, for the

@@ -1,6 +1,6 @@
 // The line a thread's transcript gets when it moves between the inbox,
 // hibernating and the archive, so it's clear when that happened and who
-// did it (docs/protocol.md, "Moves in the transcript"). Ville asked for it
+// did it (docs/protocol/threads.md, "Moves in the transcript"). Ville asked for it
 // on 20 Nov 2026: a thread back in the inbox said nothing about having
 // been away, or why it came back.
 

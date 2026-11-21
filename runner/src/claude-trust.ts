@@ -1,5 +1,5 @@
 // A folder's Claude Code settings that run commands by themselves, or
-// widen what the agent may do unasked (docs/protocol.md, "Trusting a
+// widen what the agent may do unasked (docs/protocol/trust.md, "Trusting a
 // folder's Claude Code hooks").
 //
 // The runner starts Claude with the folder's own settings
@@ -161,6 +161,19 @@ export function claudeOptions(rec: { permissionMode: PermissionMode }): ClaudeOp
 // nothing changes). `home` bounds the search for `.mcp.json` and the
 // `.claude` folders, which Claude reads from the folder and the ones above.
 export function claudeCommands(cwd: string, home: string = os.homedir(), opts: ClaudeOptions = {}): ClaudeCommands | undefined {
+  return commandsOf(cwd, home, opts, () => markdownFiles(path.resolve(cwd), home));
+}
+
+// claudeCommands for each kind of thread in `kinds`, from one look for the
+// agent, skill and command files: they're the same for both kinds, and the
+// git listings that find them are most of a look's time (about 100 ms of
+// every new thread's first message on an M2, ADEMark A4, 21 Nov).
+export function claudeCommandsKinds(cwd: string, home: string = os.homedir(), kinds: boolean[]): (ClaudeCommands | undefined)[] {
+  let md: MarkdownFound | undefined;
+  return kinds.map((grants) => commandsOf(cwd, home, { grants }, () => (md ??= markdownFiles(path.resolve(cwd), home))));
+}
+
+function commandsOf(cwd: string, home: string, opts: ClaudeOptions, findMarkdown: () => MarkdownFound): ClaudeCommands | undefined {
   const dir = path.resolve(cwd);
   // In home, the folder's settings are Mike's own user settings.
   if (realpath(dir) === realpath(path.resolve(home))) return undefined;
@@ -188,7 +201,7 @@ export function claudeCommands(cwd: string, home: string = os.homedir(), opts: C
     add(file, read.ok ? mcpCommandParts(read.value) : { unreadable: read.text }, read.sha256);
   }
   let incomplete: string | undefined;
-  const md = markdownFiles(dir, home);
+  const md = findMarkdown();
   if (md.problem) incomplete = md.problem;
   for (const file of md.files) {
     let bytes: Buffer;
@@ -320,7 +333,9 @@ function upToHome(dir: string, home: string): string[] {
 // file there. Under git, nested skills are what git lists (tracked or
 // not ignored), as Claude skips ignored ones; elsewhere a walk, which
 // can't vouch for a folder too big to walk.
-function markdownFiles(dir: string, home: string): { files: string[]; problem?: string } {
+type MarkdownFound = { files: string[]; problem?: string };
+
+function markdownFiles(dir: string, home: string): MarkdownFound {
   const out = new Set<string>();
   try {
     for (const d of upToHome(dir, home)) {
@@ -370,8 +385,14 @@ function walkMarkdown(root: string): string[] {
 // matched without case, as macOS finds `skill.md` for `SKILL.md`.
 class TooBig extends Error {}
 
-// A skill file at any depth, as `:(glob,icase)**/.claude/skills/**/skill.md`.
-const SKILL_PATH = /(?:^|\/)\.claude\/skills\/(?:[\s\S]*\/)?skill\.md$/i;
+// A skill file anywhere in a repo, as git's `:(glob,icase)**/.claude/skills/**/skill.md`
+// matches it: `**/` is any number of folders (none too), and case is
+// ASCII's only, as git's. Without a regex, so a long path an index names
+// takes a single pass (a regex here backtracked: Gemini's review, 21 Nov).
+function isSkillFile(f: string): boolean {
+  const p = f.replace(/[A-Z]+/g, (c) => c.toLowerCase());
+  return p.endsWith('/skill.md') && `/${p.slice(0, -'skill.md'.length)}`.includes('/.claude/skills/');
+}
 
 function nestedSkills(dir: string, depth = 0, followed?: { links: boolean }): { files: string[]; problem?: string } {
   const git = (...args: string[]): string | undefined => {
@@ -383,34 +404,36 @@ function nestedSkills(dir: string, depth = 0, followed?: { links: boolean }): { 
       return undefined;
     }
   };
-  // Two listings, as each git run costs about 30ms and a folder of
-  // checkouts has a hundred of them: the index (no walk of the files) and
-  // what's not in it and not ignored (one walk).
-  const staged = git('ls-files', '-s', '-z');
-  if (staged !== undefined) {
-    let files: string[] = [];
+  // One listing of the tracked files (with their modes) and the untracked
+  // ones, each line tagged with which it is (`-t`: `?` untracked, a letter
+  // for tracked), and the skill files picked from it here. It was three
+  // calls, git finding the skill files too, and each is a process (about
+  // 10 ms, more on a busy Mac) that a new thread's first message waits on.
+  const all = git('ls-files', '-t', '-s', '-o', '--exclude-standard', '-z');
+  if (all !== undefined) {
+    const listed = new Set<string>();
     // What git doesn't list inside: submodules, and repos of their own in
     // folders it doesn't track, which Claude still looks in.
     const inner = new Set<string>();
     // And links to folders, which Claude goes through and git doesn't.
     const links = new Set<string>();
-    const others = git('ls-files', '-o', '--exclude-standard', '-z');
-    for (const line of staged.split('\0')) {
-      const m = /^(\d{6}) [0-9a-f]+ \d+\t([\s\S]+)$/.exec(line);
-      if (!m) continue;
+    for (const line of all.split('\0')) {
+      if (!line) continue;
+      if (line.startsWith('? ')) {
+        const f = line.slice(2);
+        if (f.endsWith('/') && fs.existsSync(path.join(dir, f, '.git'))) inner.add(path.join(dir, f.slice(0, -1)));
+        else if (isLink(path.join(dir, f))) links.add(path.join(dir, f));
+        if (isSkillFile(f)) listed.add(f);
+        continue;
+      }
+      const m = /^[A-Za-z] (\d+) [0-9a-f]+ \d+\t([\s\S]+)$/.exec(line);
+      // A line this can't read could be a file it would miss.
+      if (!m) return { files: [], problem: "git listed the folder's files in a way Threadbear couldn't read, so it can't tell which skills Claude would load." };
       if (m[1] === '160000') inner.add(path.join(dir, m[2]));
       else if (m[1] === '120000') links.add(path.join(dir, m[2]));
-      if (SKILL_PATH.test(m[2])) files.push(path.join(dir, m[2]));
+      if (isSkillFile(m[2])) listed.add(m[2]);
     }
-    if (others === undefined) return { files: files.filter(isFile), problem: "git couldn't list the folder's files, so Threadbear can't tell which skills Claude would load." };
-    for (const f of others.split('\0')) {
-      if (!f) continue;
-      if (f.endsWith('/') && fs.existsSync(path.join(dir, f, '.git'))) inner.add(path.join(dir, f.slice(0, -1)));
-      else if (SKILL_PATH.test(f)) files.push(path.join(dir, f));
-      else if (isLink(path.join(dir, f))) links.add(path.join(dir, f));
-    }
-    // Listed but gone from the folder, or not a file.
-    files = files.filter(isFile);
+    const files = [...listed].map((f) => path.join(dir, f)).filter(isFile);
     for (const l of links) {
       if (!isLink(l) || !isDir(l)) continue;
       if (followed) followed.links = true;
@@ -429,10 +452,28 @@ function nestedSkills(dir: string, depth = 0, followed?: { links: boolean }): { 
     }
     return { files };
   }
-  // Not a git checkout (or git failed): look through the folders, links
-  // and all, which a watch can't vouch for.
+  // A listing that failed in a checkout (too big for the buffer, too slow,
+  // an index git won't read) can't be made up for by the walk below, which
+  // leaves out node_modules and what's inside .claude folders: nothing
+  // that git would have listed may be missed (Codex's and Gemini's review,
+  // 21 Nov: a 64 MiB listing fell back to the walk).
+  // In a checkout by its .git, from the folder's real path as git finds it
+  // (through a link into a repo), or as git itself says (a repo shaped
+  // like a bare one, with no .git); either is enough.
+  if (inCheckout(realpath(dir)) || git('rev-parse', '--is-inside-work-tree') !== undefined) return { files: [], problem: "git couldn't list the folder's files, so Threadbear can't tell which skills Claude would load." };
+  // Not a git checkout: look through the folders, links and all, which a
+  // watch can't vouch for.
   if (followed) followed.links = true;
   return walkForSkills(dir, false, depth);
+}
+
+// Whether `dir` or a folder above it has a .git (a folder, or a file for a
+// worktree or submodule), as git looks for one.
+function inCheckout(dir: string): boolean {
+  for (let d = path.resolve(dir); ; d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, '.git'))) return true;
+    if (path.dirname(d) === d) return false;
+  }
 }
 
 // The skill files in `.claude/skills` folders under `root` (its own too

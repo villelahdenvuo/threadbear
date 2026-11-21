@@ -1,5 +1,5 @@
 // A thread moving between the inbox, hibernating and the archive leaves one
-// line in its transcript saying who moved it (docs/protocol.md, "Moves in
+// line in its transcript saying who moved it (docs/protocol/threads.md, "Moves in
 // the transcript").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

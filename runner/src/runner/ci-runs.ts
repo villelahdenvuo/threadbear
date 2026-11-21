@@ -1,5 +1,5 @@
 // GitHub Actions runs in a thread's Highlights (experiment ciRuns,
-// ci-runs.ts; docs/protocol.md, "Highlights"). Looked at when a command's
+// ci-runs.ts; docs/protocol/panels.md, "Highlights"). Looked at when a command's
 // result looks like a push or a `gh workflow run`, and when a client fetches
 // the thread's highlights (so a restart picks them up again). Then again on
 // a timer, only while a run is queued or running, and never for an archived

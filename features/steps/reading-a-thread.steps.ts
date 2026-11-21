@@ -181,7 +181,7 @@ Then('each wait line\'s words are one line inside its own row', async function (
   }
 });
 
-// A move between the inbox, hibernating and the archive (docs/protocol.md,
+// A move between the inbox, hibernating and the archive (docs/protocol/threads.md,
 // "Moves in the transcript"): a row of its own, never folded into the work.
 Then('the transcript has a line across it saying {string}', async function (this: ThreadbearWorld, words: string) {
   await this.until(`a move line "${words}"`, (d) => d.transcript.rows.some((r) => r.kind === 'note' && !r.inGroup && r.text.startsWith(words)));

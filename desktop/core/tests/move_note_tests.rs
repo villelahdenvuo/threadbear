@@ -1,5 +1,5 @@
 // A thread moving between the inbox, hibernating and the archive leaves a
-// `system.note` with a `move` (docs/protocol.md, "Moves in the transcript"),
+// `system.note` with a `move` (docs/protocol/threads.md, "Moves in the transcript"),
 // which the app draws as a divider with the time (Ville, 20 Nov 2026).
 
 mod support;

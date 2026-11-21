@@ -100,7 +100,7 @@ export const reviewsPart = {
     this.persistReview(st, next, [...st.rec.queue, message], true);
     // Said in the transcript, as a message bringing it back is (place-moves.ts).
     if (from !== 'inbox') this.emit(st, {type: 'system.note', text: from === 'archived' ? 'Back from the archive for your answer to a review.' : 'Woke up for your answer to a review.', move: {from, to: 'inbox', by: 'mike'}});
-    st.rt.releaseWhenIdle = false;
+    this.cli(st, { kind: 'stay' });
     this.markDirty(st);
     this.kickQueue(st);
     return {review: structuredClone(next), turnId};

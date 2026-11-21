@@ -358,7 +358,7 @@ async function main(argv: string[]): Promise<number> {
 
 type Flags = Record<string, string | boolean | string[] | undefined>;
 
-// `tb queued` (docs/protocol.md, "Queued jobs"). Quiet and always 0: a
+// `tb queued` (docs/protocol/updates.md, "Queued jobs"). Quiet and always 0: a
 // job reports this on its way into a wait, and nothing about the report
 // (no thread, an older runner, no connection) may hold it up or fail it.
 async function queuedCommand(cfg: ReturnType<typeof loadConfig>, id: string | undefined, f: Flags): Promise<number> {

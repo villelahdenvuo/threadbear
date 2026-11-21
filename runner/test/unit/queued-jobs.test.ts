@@ -1,4 +1,4 @@
-// docs/protocol.md, "Queued jobs": a job waiting for its turn on a lock says
+// docs/protocol/updates.md, "Queued jobs": a job waiting for its turn on a lock says
 // so, and the thread's summary carries it until it has its turn or is gone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

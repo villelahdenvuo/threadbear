@@ -122,7 +122,7 @@ function syncDeployment(home) {
 const LOCK_WAIT_SECS = 30 * 60;
 const LOCKED_ENV = 'DEPLOY_BACKEND_LOCK_HELD';
 // The id this run's wait was reported queued under, for the copy that has
-// the lock to say it's over (docs/protocol.md, "Queued jobs").
+// the lock to say it's over (docs/protocol/updates.md, "Queued jobs").
 const QUEUED_ENV = 'DEPLOY_BACKEND_QUEUED_ID';
 let unlocked = false;
 
@@ -266,7 +266,7 @@ function main(argv) {
   }
 
   // Only the main Mac's runner deploys the backend. A Mac with a runner key
-  // of its own (docs/protocol.md, "Runner keys") doesn't, even if an older
+  // of its own (docs/protocol/keys.md, "Runner keys") doesn't, even if an older
   // setup left a deploy key there (tb runner check says to remove it).
   if (hasRunnerKey(home)) {
     say('This Mac has a runner key of its own, so it leaves deploying the backend to the main Mac.');

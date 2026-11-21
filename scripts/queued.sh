@@ -1,6 +1,6 @@
 #!/bin/bash
 # Tells Threadbear a job of this thread's is waiting for its turn on a lock,
-# so the app says Queued rather than running (docs/protocol.md, "Queued jobs"):
+# so the app says Queued rather than running (docs/protocol/updates.md, "Queued jobs"):
 #
 #   scripts/queued.sh wait <id> <what> <behind> <pid>
 #   scripts/queued.sh done <id> [-- <command...>]

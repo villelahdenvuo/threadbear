@@ -48,10 +48,10 @@ public enum PendingApproval: Codable, Sendable, Hashable {
     /// planSeq: on Claude's ExitPlanMode card, the seq of the plan row it
     /// waits on (backend API 72), so the plan shown is that one.
     /// reason: what made it ask, in a sentence (backend API 81,
-    /// docs/protocol.md "Why a card asks").
+    /// docs/protocol/threads.md "Why a card asks").
     case approval(id: String, name: String, title: String, options: [ApprovalOption], inputSummary: String?, planSeq: Int? = nil, reason: String? = nil)
     case question(id: String, questions: [Question])
-    /// `ask_secret` (docs/protocol.md, "Secrets"): `key` is the runner's
+    /// `ask_secret` (docs/protocol/threads.md, "Secrets"): `key` is the runner's
     /// X25519 public key (raw, base64), which the phone seals the value to.
     case secret(id: String, label: String, reason: String, placeholder: String?, key: String)
     /// A kind this build doesn't know: the thread waits, and the card says
@@ -142,7 +142,7 @@ public struct ProjectRef: Codable, Sendable, Hashable {
     }
 }
 
-/// A project's icon as the Mac shows it (docs/protocol.md, "Icons"): its
+/// A project's icon as the Mac shows it (docs/protocol/projects.md, "Icons"): its
 /// picture, here a URL into the backend's file storage (backend API 5),
 /// else an SF Symbol. Neither: the title's first letter.
 public struct PhoneProjectIcon: Codable, Sendable, Hashable {
@@ -288,7 +288,7 @@ public struct PhoneThread: Codable, Sendable, Hashable, Identifiable {
     /// done card.
     public var next: [String]?
     /// What the runner found still open on a thread whose last turn needs
-    /// nothing (docs/protocol.md, "Loose ends"; backend API 73), for the
+    /// nothing (docs/protocol/threads.md, "Loose ends"; backend API 73), for the
     /// done card's "Still open" list. Nil when it hasn't checked, and from
     /// an older runner; empty when nothing's left.
     public var looseEnds: [PhoneLooseEnd]?

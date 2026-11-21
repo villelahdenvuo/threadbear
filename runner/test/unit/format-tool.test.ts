@@ -73,7 +73,7 @@ test('an edit to a section of the old file comes across into the file the sectio
   const main = setup();
   const p = sh(main, 'git rev-parse HEAD');
   const t = makeBranch(main);
-  commit(t.path, { 'docs/protocol.md': edit(DOC, 'Its asks.', 'Its asks, one by one.'), 'runner/a.ts': '// docs/protocol.md, "Needs you"\nexport const a = 2;\n' }, 'Edit the card and cite it');
+  commit(t.path, { 'docs/protocol.md': edit(DOC, 'Its asks.', 'Its asks, one by one.'), 'runner/a.ts': '// docs/protocol/needs-you.md, "Needs you"\nexport const a = 2;\n' }, 'Edit the card and cite it');
   const tip = sh(t.path, 'git rev-parse HEAD');
   const f = splitOn(main);
   const cross = await crossings(main, tip, 'main');
@@ -82,7 +82,7 @@ test('an edit to a section of the old file comes across into the file the sectio
   assert.ok(r.ok, JSON.stringify(r));
   assert.equal(sh(main, `git diff --name-only ${f} ${r.tip}`), 'docs/protocol/needs-you.md\nrunner/a.ts');
   assert.match(sh(main, `git show ${r.tip}:docs/protocol/needs-you.md`), /The card\.\nIts asks, one by one\./);
-  assert.equal(sh(main, `git show ${r.tip}:runner/a.ts`), '// docs/protocol.md, "Needs you"\nexport const a = 2;');
+  assert.equal(sh(main, `git show ${r.tip}:runner/a.ts`), '// docs/protocol/needs-you.md, "Needs you"\nexport const a = 2;');
   assert.doesNotMatch(sh(main, `git show ${r.tip}:docs/protocol.md`), /The card/);
 });
 

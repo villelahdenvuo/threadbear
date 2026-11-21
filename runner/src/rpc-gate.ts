@@ -1,4 +1,4 @@
-// What a thread may do over the RPC (docs/protocol.md, "A thread's own key").
+// What a thread may do over the RPC (docs/protocol/connection.md, "A thread's own key").
 // The app and tb outside a thread have the runner's token and answer to
 // nobody. A connection that belongs to a thread answers to the same rules as
 // that thread's own threadbear tools (threadbear-mcp.ts, "Raising access"),
@@ -176,7 +176,7 @@ export class CallerGate {
         if (id === threadId) throw new RpcError(ErrorCode.notAllowed, "That's the thread this runs in. Just end the turn.");
         return { ...p, byAgent: true };
       }
-      // Its own jobs only (docs/protocol.md, "Queued jobs").
+      // Its own jobs only (docs/protocol/updates.md, "Queued jobs").
       case 'threads.queued': {
         if (str(p, 'threadId') !== threadId) throw new RpcError(ErrorCode.notAllowed, "A thread reports only its own jobs as queued.");
         return p;
@@ -284,7 +284,7 @@ export class CallerGate {
     // has a check. A login another runner doesn't have is saved as given and
     // stops the schedule quietly, like a delete (OpenCode's review of the
     // Daybreak finding 138 fix).
-    const changes = ['text', 'title', 'at', 'cron', 'cwd', 'timezone', 'accountId', 'poolId', 'model', 'effort'].some((k) => p[k] !== undefined) || (p.paused === false && sc.paused);
+    const changes = ['text', 'title', 'at', 'cron', 'cwd', 'timezone', 'accountId', 'poolId', 'provider', 'model', 'effort'].some((k) => p[k] !== undefined) || (p.paused === false && sc.paused);
     if (changes && (above(was, caller) || sc.check)) throw needs(`changing the schedule "${sc.title}"`, 'update_schedule');
     // Lowering one above the caller, or taking its check off, is free for a
     // schedule the caller could have made, but on Mike's it takes away what he

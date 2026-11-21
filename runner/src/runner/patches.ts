@@ -17,6 +17,7 @@ import type { AgentWrite } from '../adapters/types.ts';
 import { CLAUDE_PATCH_ID, claudeCommands, claudeOptions, settingsCommands, settingsNamedPaths, type ClaudeOptions } from '../claude-trust.ts';
 import { canonicalPath, codeByName, type CodeWrite, type CodeWriteWhy } from '../code-writes.ts';
 import type { PatchInfo } from '../protocol.ts';
+import { plainLine, waitingWhy } from '../patch-changes.ts';
 import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, toggleListPanel, NoSwitches, runCommand, PATCH_SH_MAX_BYTES, type CommandOutcome, type PanelRender, type PatchSet, type PatchThread, type ProjectFolder, projectPatchFiles } from '../patches.ts';
 import { liveCommandEnv } from '../shell-allowlist.ts';
 import { codeOfUnhashedPatch, commandShown, shellWords, type CodeScan, type UnsureWhy } from '../unhashed-scan.ts';
@@ -188,7 +189,7 @@ export const patchesPart = {
     if (entry.live) this.armLivePoll();
   },
 
-  // Panel buttons' panels (docs/protocol.md, "Reply buttons"): each pressed
+  // Panel buttons' panels (docs/protocol/events.md, "Reply buttons"): each pressed
   // one's panel as a thread in its folder has it, its badge and summary run
   // there (a patch's server starts from them), under an id of its own and
   // with `{threadId}` left empty: the thread beside it isn't one of that
@@ -318,8 +319,7 @@ export const patchesPart = {
       }
       if (p.untrusted) {
         if (old?.untrusted !== p.untrusted || old?.hash !== p.hash) {
-          const why = p.untrusted === 'changed' ? 'it changed since you trusted it' : 'nothing from its folder is trusted yet';
-          this.emit(st, { type: 'system.note', text: `Patch ${p.id} isn't loaded: ${why}. Trust it in Patches to load it.` });
+          this.emit(st, { type: 'system.note', text: `Patch ${plainLine(p.id, 80)} isn't loaded: ${waitingWhy(p)}. Trust it in Patches to load it.` });
         }
         continue;
       }
@@ -402,7 +402,7 @@ export const patchesPart = {
   },
 
   // Why an edit of `file` asks as code, for the card's reason line
-  // (docs/protocol.md, "Why a card asks"), or undefined when it doesn't.
+  // (docs/protocol/threads.md, "Why a card asks"), or undefined when it doesn't.
   codeWriteWhy(this: Runner, rec: ThreadRecord, file: string): CodeWriteWhy | undefined {
     const c = this.checkCodeWrite(rec, file);
     if (!c.kind) return undefined;

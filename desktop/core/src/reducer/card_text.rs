@@ -81,7 +81,7 @@ impl ApprovalText {
         (!title.is_empty()).then(|| Self::shown(title))
     }
 
-    /// What made the card ask (docs/protocol.md, "Why a card asks"), for
+    /// What made the card ask (docs/protocol/threads.md, "Why a card asks"), for
     /// the info line under its title: Auto's safety check, a file that runs
     /// as code, a patch Threadbear can't follow (which, and the command), a
     /// rule, an MCP tool. Ville, 14 Nov 2026: plain Writes asked in an Auto
@@ -227,7 +227,7 @@ impl ApprovalText {
             let (body, end) = line.strip_suffix('\n').map_or((line, ""), |b| (b, "\n"));
             let kept = body.trim_end_matches(' ');
             out.push_str(&kept.replace('\t', "\u{21E5}   "));
-            out.extend(std::iter::repeat('\u{B7}').take(body.len() - kept.len()));
+            out.extend(std::iter::repeat_n('\u{B7}', body.len() - kept.len()));
             out.push_str(end);
         }
         out
