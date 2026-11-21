@@ -2,7 +2,7 @@ import Foundation
 import os
 
 /// What a provider is called and can do, from `hello.providers`
-/// (docs/protocol/types.md, "Types"). A provider id alone never decides what a
+/// (docs/protocol.md, "Types"). A provider id alone never decides what a
 /// control offers, so a provider this app has never heard of still gets the
 /// right menus.
 public struct ProviderInfo: Sendable, Hashable, Decodable {

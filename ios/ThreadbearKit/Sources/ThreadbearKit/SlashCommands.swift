@@ -1,6 +1,6 @@
 import Foundation
 
-/// A command the composer's palette offers (docs/protocol/threads.md, "Slash
+/// A command the composer's palette offers (docs/protocol.md, "Slash
 /// commands"), as `threads.commands` lists it for a thread.
 public struct SlashCommand: Sendable, Hashable, Codable, Identifiable {
     public var name: String
