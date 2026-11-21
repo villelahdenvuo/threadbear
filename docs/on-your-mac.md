@@ -220,6 +220,13 @@ File references are where to look.
   `convex-key` is this Mac's key for your Convex backend (the deployment's
   `RUNNER_KEY` on your first Mac, a runner key of its own on any other);
   `~/Library/Caches/Threadbear/update`;
+  for Threadbear's own checks (`./check.sh`, which `tb land` runs, only in
+  a checkout of Threadbear itself), `~/Library/Caches/Threadbear/check-passes`
+  (one small file per step or runner test file that passed, named by a
+  hash of what it read, so the next check skips it; deleted after 30 days,
+  and off with `"checkPasses": false` in runner.json) and
+  `~/Library/Caches/Threadbear/check-desktop-target` (cargo's build folder,
+  shared by every checkout; off with `"checkSharedTarget": false`);
   the GPUI app's `threadbear-paste-*` folders under the user's temporary
   folder (0700, with picture files owner-only), holding copies of dropped or pasted
   pictures until the runner imports them, then removed. A promise's partial

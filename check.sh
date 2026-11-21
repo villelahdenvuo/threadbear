@@ -34,7 +34,17 @@
 #                 check host can take it
 #   --app         the Swift app's swift build and swift test only, changed
 #                 or not
-#   --all         don't skip the Swift app, dock and deploy tests (below)
+#   --all         don't skip the Swift app, dock and deploy tests (below),
+#                 nor anything that passed before (next)
+#
+# A step, or one of the runner's unit test files, that passed before with
+# exactly the same inputs is skipped, and its ok line says when it passed
+# (scripts/check-cache.mjs). The inputs are what the files hold, so a pass
+# counts in every worktree, after a rebase and after a release comes in;
+# Node, the step's tool (cargo, swift), the lockfiles and this file are in
+# them too. The records are kept a week, in
+# ~/Library/Caches/Threadbear/check-passes (THREADBEAR_CHECK_PASSES names
+# another folder, or "off"; runner.json's "checkPasses": false turns it off).
 #
 # When up to 8 of the runner's unit test files fail, those run again on
 # their own, one at a time, and a pass then counts: the step's line lists
@@ -370,6 +380,48 @@ TMP_ROOT="${TMPDIR:-/tmp}"
 LOGS="$(mktemp -d "${TMP_ROOT%/}/threadbear-check.XXXXXX")"
 FAILED=""
 
+# Pass records (scripts/check-cache.mjs, the comment at the top). Only for
+# the real runner's checks, as the shared cargo folder: a test's run of this
+# script has a temp THREADBEAR_HOME and names its own folder if it wants one.
+PASSES=""
+PASSES_READ=1
+[ "$ALL" = 0 ] || PASSES_READ=0
+if [ -f "$ROOT/scripts/check-cache.mjs" ] && [ "${THREADBEAR_CHECK_PASSES:-}" != off ] && [ "$(runner_json_flag checkPasses)" != false ]; then
+  if [ -n "${THREADBEAR_CHECK_PASSES:-}" ]; then
+    PASSES="$THREADBEAR_CHECK_PASSES"
+  elif [ -z "$HOME_GIVEN" ]; then
+    PASSES="$HOME/Library/Caches/Threadbear/check-passes"
+  fi
+fi
+if [ -n "$PASSES" ]; then
+  # What every file of this checkout holds, once: each key is made from it.
+  if mkdir -p "$PASSES/steps" "$PASSES/tests" && "$NODE" "$ROOT/scripts/check-cache.mjs" tree "$ROOT" "$LOGS/tree" 2>/dev/null; then
+    PASSES_BY="$(date '+%d %b %H:%M') on $(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "a copy")"
+    find "$PASSES" -type f -mtime +30 -delete 2>/dev/null
+  else
+    PASSES=""
+  fi
+fi
+# step_key <name> <command...>: the step's key, or nothing (never skipped).
+step_key() {
+  [ -n "$PASSES" ] || return 0
+  "$NODE" "$ROOT/scripts/check-cache.mjs" step "$LOGS/tree" "$ROOT" "$@" 2>/dev/null
+}
+# passed_before <name> <key>: says so and succeeds when the key passed in
+# the last week.
+passed_before() {
+  local rec="$PASSES/steps/$2"
+  [ -n "$2" ] && [ "$PASSES_READ" = 1 ] && [ -f "$rec" ] && [ -n "$(find "$rec" -mtime -7 2>/dev/null)" ] || return 1
+  # ok, not skip: it passed, and the runner's updater counts a landing's
+  # passing steps (update.ts, passedLandCheck).
+  printf 'ok    %-20s %4ss  (skipped: passed with the same inputs %s)\n' "$1" 0 "$(cat "$rec")"
+}
+# record_pass steps|tests <key>
+record_pass() {
+  [ -n "$PASSES" ] && [ -n "$2" ] || return 0
+  printf '%s\n' "$PASSES_BY" >"$PASSES/$1/$2.$$" && mv "$PASSES/$1/$2.$$" "$PASSES/$1/$2"
+}
+
 # only_entry <step>: --only's entry for it ("name" or "name=files"), failing
 # when --only was given and doesn't name it. (Loops, not a case: step names
 # have spaces and brackets in them.)
@@ -409,10 +461,14 @@ step() {
   if left_out "$name"; then return; fi
   ran_asked "$name"
   shift 2
+  local key
+  key="$(step_key "$name" "$@")"
+  if passed_before "$name" "$key"; then return; fi
   local log="$LOGS/$(printf '%s' "$name" | tr -c 'a-zA-Z0-9' '-').log"
   local start=$SECONDS
   if (cd "$dir" && "$@") >"$log" 2>&1; then
     printf 'ok    %-20s %4ss\n' "$name" "$((SECONDS - start))"
+    record_pass steps "$key"
   else
     printf 'FAIL  %-20s %4ss  %s\n' "$name" "$((SECONDS - start))" "$log"
     FAILED="$FAILED$name|$log
@@ -485,13 +541,54 @@ runner_unit_tests() {
       note="  (left out ${#skipping[@]} tooling test files: nothing they test changed)"
     fi
   fi
+  # Test files that passed before with what they read now (their imports
+  # and the files they name, scripts/check-cache.mjs) are left out too.
+  local keys="$LOGS/runner-unit-tests.keys" passed="$LOGS/runner-unit-tests.passed" ran=()
+  local record=()
+  if [ -n "$PASSES" ]; then
+    local listed=() verdict file key skipped=0
+    if [ "${targets[0]}" = "test/unit/**/*.test.ts" ]; then
+      while IFS= read -r t; do listed+=("$t"); done < <(cd "$dir" && find test/unit -name '*.test.ts' | LC_ALL=C sort)
+    else
+      listed=("${targets[@]}")
+    fi
+    if (cd "$dir" && "$NODE" "$ROOT/scripts/check-cache.mjs" tests "$LOGS/tree" "$ROOT" "$PASSES" "${listed[@]}") >"$keys.all" 2>/dev/null \
+      && [ "$(grep -c . "$keys.all")" = "${#listed[@]}" ]; then
+      : >"$keys"
+      while IFS=' ' read -r verdict file key _; do
+        if [ "$verdict" = skip ] && [ "$PASSES_READ" = 1 ]; then
+          skipped=$((skipped + 1))
+        else
+          ran+=("$file")
+          printf '%s %s\n' "$file" "$key" >>"$keys"
+        fi
+      done <"$keys.all"
+      if [ "${#ran[@]}" = 0 ]; then
+        printf 'ok    %-20s %4ss  (skipped: all %s test files passed with what they read now; --all runs them)\n' "$name" "$((SECONDS - start))" "$skipped"
+        return
+      fi
+      targets=("${ran[@]}")
+      [ -f "$dir/test/helpers/passed-files-reporter.mjs" ] \
+        && record=(--test-reporter=./test/helpers/passed-files-reporter.mjs --test-reporter-destination="$passed")
+      if [ "$skipped" -gt 0 ]; then
+        note="$note  (skipped $skipped test files that passed with what they read now)"
+        # Which ran, when that's few enough to read.
+        [ "${#ran[@]}" -gt 20 ] || note="$note
+        ran: ${ran[*]}"
+      fi
+    fi
+  fi
   local run=(node --import=./test/helpers/clean-env.ts --test --test-timeout=300000 --test-force-exit --test-reporter=spec)
   if (cd "$dir" && "${run[@]}" --test-reporter-destination=stdout \
       --test-reporter=./test/helpers/failed-files-reporter.mjs --test-reporter-destination="$list" \
-      "${targets[@]}") >"$log" 2>&1; then
+      ${record[@]+"${record[@]}"} "${targets[@]}") >"$log" 2>&1; then
     printf 'ok    %-20s %4ss%s\n' "$name" "$((SECONDS - start))" "$note"
+    record_test_passes "$passed"
     return
   fi
+  # Each file that passed counts, even though the step failed: the next
+  # check runs just the ones that failed (and what changed since).
+  record_test_passes "$passed"
   local files=()
   [ -f "$list" ] && while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done <"$list"
   # For the --only line a failed run ends with: the files, when they're few
@@ -512,6 +609,8 @@ runner_unit_tests() {
     local relog="$LOGS/runner-unit-tests-again.log"
     if (cd "$dir" && "${run[@]}" --test-concurrency=1 "${files[@]}") >"$relog" 2>&1; then
       printf 'ok    %-20s %4ss  (passed on a second run of the files that failed:)\n' "$name" "$((SECONDS - start))"
+      printf '%s\n' "${files[@]}" >"$passed.again"
+      record_test_passes "$passed.again"
       # The tests that failed the first time: the spec reporter's ✖ lines,
       # once each (its summary at the end repeats them).
       sed -E $'s/\x1b\\[[0-9;]*[A-Za-z]//g' "$log" | grep -E '^[[:space:]]*✖ ' | grep -v '✖ failing tests:' | sed -E 's/^[[:space:]]*/        /' | sort -u | head -n 12
@@ -525,6 +624,20 @@ runner_unit_tests() {
   printf 'FAIL  %-20s %4ss  %s\n' "$name" "$((SECONDS - start))" "$log"
   FAILED="$FAILED$name|$log
 "
+}
+
+# record_test_passes <file>: records the test files it lists (whole paths, as
+# the reporters write them) as passed, with the keys worked out above.
+record_test_passes() {
+  local keys="$LOGS/runner-unit-tests.keys" dir="$ROOT/runner" f rel real key
+  [ -n "$PASSES" ] && [ -f "$1" ] && [ -f "$keys" ] || return 0
+  real="$(cd "$dir" && pwd -P)"
+  while IFS= read -r f; do
+    rel="${f#"$dir"/}"
+    rel="${rel#"$real"/}"
+    key="$(awk -v f="$rel" '$1 == f { print $2; exit }' "$keys")"
+    record_pass tests "$key"
+  done <"$1"
 }
 
 # A finished install only: npm writes node_modules/.package-lock.json last,
@@ -655,6 +768,12 @@ cargo_step() {
   # mustn't write down these files as what the shared target was built from.
   if left_out "$name"; then return; fi
   shift
+  # A pass with these inputs: nothing to build, and so nothing to write
+  # down as what the shared target was built from.
+  if [ -n "${CARGO:-}" ] && passed_before "$name" "$(step_key "$name" "${LIMITED[@]}" "$CARGO" "$@")"; then
+    ran_asked "$name"
+    return
+  fi
   if [ -z "$CARGO" ]; then
     if [ -n "${THREADBEAR_CHECK_CHANGED_FILE:-}" ]; then
       # On a check host a skip would let a desktop change land unchecked.

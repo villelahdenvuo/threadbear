@@ -449,6 +449,49 @@ Each of those runs leaves a line in the times log with `alone: true`,
 `only` and `passed`, and none of `ok`, `check` and `intact`, so nothing that
 reads the log for whole checks counts one.
 
+### What passed before is skipped
+
+On a Mac with no check host every landing's check ran from scratch: 20 to
+25 minutes, mostly the runner's unit tests (Ville, 21 Nov 2026: "Keep track
+of changes and only run the deltas"). So check.sh records each step, and
+each runner unit test file, that passes, under a key made from what it
+read (`scripts/check-cache.mjs`), and skips it while that key has a pass
+from the last week. The line says ok, as it passed, and why it took no time:
+
+```
+ok    web tests               0s  (skipped: passed with the same inputs 21 Nov 17:04 on thread/4f12cc1e)
+ok    runner unit tests      94s  (skipped 301 test files that passed with what they read now)
+```
+
+- The key is what the files hold (git's blob ids), never a commit, so a
+  pass counts in every worktree and in `tb land`'s own checkout, after a
+  rebase, and after a release comes in. A rebase that changes nothing
+  reruns nothing; a release reruns what its files reach.
+- A step's key holds the files it reads (a table in check-cache.mjs; a
+  step not in it reads everything), its command line, its tool's version
+  (cargo and rustc, swift, npm) and Node's.
+- A test file's key holds its imports, followed all the way, and the files
+  it or the scripts it runs name ("docs/guide.md", `path.join(ROOT,
+  'scripts', 'x.sh')`), plus the runner's packages and lockfile, the test
+  helpers every file loads, and Node. The runner's own code names files
+  all over to tell people about them, so from there only imports count.
+- Every key holds check.sh and check-cache.mjs: changing the check reruns
+  everything.
+- A failed run still records the files that passed, so the next check runs
+  the ones that failed and whatever changed since, with no `--only`.
+- `--all` reads no records (it still writes them). A record past a week
+  doesn't count, so whatever a key misses runs again within a week anyway.
+- The records are in `~/Library/Caches/Threadbear/check-passes`, shared by
+  every checkout, and on a check host in its own. `THREADBEAR_CHECK_PASSES`
+  names another folder or says `off`; `"checkPasses": false` in runner.json
+  turns them off. A run with a `THREADBEAR_HOME` of its own (a test) keeps
+  none unless it names a folder.
+
+The runner's code imports itself densely (a test file reaches about 190
+files of it on median), so a change to `runner/src` still reruns about
+two thirds of the test files. Changes elsewhere (desktop/, docs, the app)
+rerun few or none.
+
 ### Where a landing's time goes
 
 A passing check prints nothing of its own, so each one leaves a line in
