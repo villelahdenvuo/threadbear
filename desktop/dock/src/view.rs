@@ -1188,7 +1188,7 @@ impl DockView {
             // mouse can reach any of them (Ville, 11 Nov 2026). The strip's
             // room is the last frame's, as it scrolls once it overflows.
             if handle.max_offset().x > px(0.) {
-                bar = bar.child(self.all_tabs_menu(&group, cx));
+                bar = bar.child(self.all_tabs_menu(group, cx));
             }
         }
         // The empty part of a bar: moves its panel (or the window, HoldDrag).
