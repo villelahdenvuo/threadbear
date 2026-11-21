@@ -1940,7 +1940,7 @@ mod tests {
         );
         let building_again = AppSide {
             building: true,
-            ..failed.clone()
+            ..failed
         };
         assert!(
             !needs_you(&building_again, None),

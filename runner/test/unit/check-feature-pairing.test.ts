@@ -43,7 +43,7 @@ function checkout(feature: string, typecheck = 'true') {
   put('features/steps/board.steps.ts', '');
   // The steps' typecheck (features/tsconfig.json), a stand-in too.
   put('features/package.json', JSON.stringify({ scripts: { typecheck } }));
-  put('features/node_modules/.keep', '');
+  put('features/node_modules/.package-lock.json', '{}');
   return root;
 }
 
