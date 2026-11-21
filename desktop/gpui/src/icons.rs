@@ -66,7 +66,11 @@ const CURSOR_LOGO: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 /// A provider's logo ("claude", "codex", "grok", "opencode", "cursor"), or its symbol where there's no logo
 /// (`ProviderMark`, with `ModelPicker.providerSymbol`'s fallbacks).
 pub fn provider_mark(provider: &str) -> Icon {
-    match if provider.is_empty() { "claude" } else { provider } {
+    match if provider.is_empty() {
+        "claude"
+    } else {
+        provider
+    } {
         "claude" => Icon::default().data(CLAUDE_LOGO),
         "codex" => Icon::default().data(CODEX_LOGO),
         "grok" => Icon::default().data(GROK_LOGO),
@@ -192,7 +196,9 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "airplane" => IconName::Plane,
         "cup.and.saucer" => IconName::Coffee,
         // The window shell's (WindowDock, ActivityBar, DetailView).
-        "bubble.left.and.bubble.right" | "bubble.left.and.text.bubble.right" => IconName::MessagesSquare,
+        "bubble.left.and.bubble.right" | "bubble.left.and.text.bubble.right" => {
+            IconName::MessagesSquare
+        }
         "square.stack.3d.up" => IconName::Layers,
         "gearshape" => IconName::Settings,
         "gauge.with.dots.needle.33percent" | "gauge.with.dots.needle.100percent" => IconName::Gauge,
@@ -215,7 +221,9 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "doc.plaintext" => IconName::FileText,
         "safari" => IconName::Compass,
         "exclamationmark.triangle" => IconName::TriangleAlert,
-        "exclamationmark.triangle.fill" => return Some(Icon::default().data(TRIANGLE_ALERT_FILLED)),
+        "exclamationmark.triangle.fill" => {
+            return Some(Icon::default().data(TRIANGLE_ALERT_FILLED))
+        }
         "exclamationmark.circle.fill" => return Some(Icon::default().data(CIRCLE_ALERT_FILLED)),
         "xmark.diamond.fill" => return Some(Icon::default().data(DIAMOND_X_FILLED)),
         "bolt.horizontal" | "bolt.horizontal.circle" => IconName::Zap,
