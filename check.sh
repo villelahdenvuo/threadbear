@@ -601,7 +601,7 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
   # error in one showed up only when the Desktop workflow ran that spec
   # (features/tsconfig.json). A few seconds.
   if needed '^features/|^desktop/scripts/own-folder\.ts$'; then
-    if [ ! -d "$ROOT/features/node_modules" ]; then
+    if ! packages_ready "$ROOT/features"; then
       step "features packages" "$ROOT/features" npm ci --no-audit --no-fund
     fi
     step "features typecheck" "$ROOT/features" npm run typecheck
@@ -685,6 +685,12 @@ cargo_step() {
   step "$name" "$ROOT/desktop" "${LIMITED[@]}" "$CARGO" "$@"
   [ -z "$record" ] || [ "$FAILED" != "$before" ] || mv "$sums" "$record"
 }
+# The Rust rust-toolchain.toml pins, first on PATH when rustup is here: a
+# Homebrew cargo ahead of rustup's ignores the pin, and its newer clippy
+# failed code the pinned one passes (Ville's Mac, 21 Nov 2026).
+if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ] && [ -f "$ROOT/rust-toolchain.toml" ] && command -v rustup >/dev/null 2>&1; then
+  PINNED_CARGO="$(cd "$ROOT" && rustup which cargo 2>/dev/null)" && [ -x "$PINNED_CARGO" ] && PATH="$(dirname "$PINNED_CARGO"):$PATH"
+fi
 # desktop/'s Rust as cargo fmt writes it (desktop/rustfmt.toml, with the
 # rustfmt of rust-toolchain.toml), --quick included: no build, a few seconds,
 # so it runs wherever this does, this Mac included. The log ends with the fix.

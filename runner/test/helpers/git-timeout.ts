@@ -23,12 +23,13 @@ function withTimeout(options: unknown): Options {
 }
 
 // (file, args?, options?): options move up a place when args are left out.
-function wrapFileCall<F extends (...a: any[]) => any>(real: F): F {
+function wrapFileCall<F extends (...a: never[]) => unknown>(wrapped: F): F {
+  const real = wrapped as unknown as (this: unknown, ...a: unknown[]) => unknown;
   return function (this: unknown, file: unknown, ...rest: unknown[]) {
     if (!isGit(file)) return real.call(this, file, ...rest);
     if (Array.isArray(rest[0]) || (rest[0] == null && rest.length > 1)) return real.call(this, file, rest[0] ?? [], withTimeout(rest[1]));
     return real.call(this, file, withTimeout(rest[0]));
-  } as F;
+  } as unknown as F;
 }
 
 const realExecSync = childProcess.execSync;

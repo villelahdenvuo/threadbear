@@ -10,7 +10,7 @@
 // Pure apart from the `gh` passed to fetchWatched, so tests give a fake.
 // The Runner part (runner/pr-watch.ts) keeps the state and does the actions.
 import os from 'node:os';
-import { parsePrUrl, type PrRef } from './github-pr.ts';
+import { parsePrUrl, graphPr, type GhGraphData, type GhGraphPr, type PrRef } from './github-pr.ts';
 import type { Gh } from './land-gate.ts';
 
 // One watched PR, by its key ("owner/repo#12").
@@ -56,14 +56,14 @@ const describe = (keys: string[]) => [...new Set(keys.map((k) => WORDS[k.split('
 // Keys: `conflict`, `ci:<sha>` (each failing commit once), `thread:<id>` (an
 // unresolved review thread), `changes-requested` (the decision), and
 // `review:<id>` / `comment:<id>` (top-level words by someone else).
-export function problemsOf(n: any, me: string): string[] {
+export function problemsOf(n: GhGraphPr, me: string): string[] {
   const out: string[] = [];
   if (n.mergeable === 'CONFLICTING') out.push('conflict');
   const ci = n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state;
   if (ci === 'FAILURE' || ci === 'ERROR') out.push(`ci:${n.headRefOid}`);
   for (const t of n.reviewThreads?.nodes ?? []) if (t && !t.isResolved) out.push(`thread:${t.id}`);
   if (n.reviewDecision === 'CHANGES_REQUESTED') out.push('changes-requested');
-  const other = (a: any) => a && a.login !== me;
+  const other = (a: { login?: string; __typename?: string } | null | undefined): a is { login?: string; __typename?: string } => a != null && a.login !== me;
   for (const r of n.reviews?.nodes ?? []) {
     // A bot's review (Copilot) says what its inline threads say.
     if (!r || !other(r.author) || r.author.__typename === 'Bot') continue;
@@ -85,16 +85,17 @@ export async function fetchWatched(urls: string[], gh: Gh): Promise<Map<string, 
   if (!refs.length) return out;
   const parts = refs.map((ref, i) => `p${i}:repository(owner:${JSON.stringify(ref.owner)},name:${JSON.stringify(ref.repo)}){pullRequest(number:${ref.number}){${FIELDS}}}`);
   const r = await gh(['api', 'graphql', '-f', `query={viewer{login} ${parts.join(' ')}}`], os.tmpdir());
-  let data: any;
+  let data: GhGraphData | undefined;
   try {
-    data = JSON.parse(r.stdout)?.data;
+    data = (JSON.parse(r.stdout) as { data?: GhGraphData })?.data;
   } catch {
     data = undefined;
   }
   if (!data?.viewer?.login) throw new Error(r.stderr.trim().split('\n').pop() || 'gh failed');
   const me = String(data.viewer.login);
+  const d = data;
   refs.forEach((ref, i) => {
-    const n = data[`p${i}`]?.pullRequest;
+    const n = graphPr(d, i);
     if (!n) return;
     const s = String(n.state ?? '').toUpperCase();
     out.set(prKey(ref), {

@@ -165,7 +165,7 @@ test('a worktree whose work landed under other commit ids goes, at archive or at
   assert.equal(asks().length, 0, 'archived just now: not asked about yet');
 
   // Archived 3 days ago and still unlanded: a thread asks about it, once.
-  h.runner.threads.get(c.id)!.rec.archivedAt = new Date(Date.parse((h.runner as any).isoNow()) - 3 * 86_400_000).toISOString();
+  h.runner.threads.get(c.id)!.rec.archivedAt = new Date(h.clock.now() - 3 * 86_400_000).toISOString();
   await h.runner.sweepArchivedWorktrees();
   assert.equal(asks().length, 1);
   const ask = asks()[0];

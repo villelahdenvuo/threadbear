@@ -340,6 +340,29 @@ export function forgetStates(ref: PrRef): void {
 // app can ask each time Highlights draws.
 
 export type PrCi = 'passed' | 'failed' | 'pending' | '';
+/** A pull request as `gh api graphql` gives it (PR_FIELDS here, pr-watch.ts's
+ *  FIELDS): GitHub can leave any field out. */
+type GhAuthor = { login?: string; __typename?: string } | null;
+export type GhGraphPr = {
+  title?: string;
+  state?: string;
+  isDraft?: boolean;
+  mergeable?: string;
+  reviewDecision?: string;
+  updatedAt?: string;
+  headRefOid?: string;
+  commits?: { nodes?: ({ commit?: { statusCheckRollup?: { state?: string } | null } } | null)[] };
+  reviewThreads?: { nodes?: ({ id?: string; isResolved?: boolean } | null)[] };
+  reviews?: { nodes?: ({ id?: string; state?: string; body?: string; author?: GhAuthor } | null)[] };
+  comments?: { nodes?: ({ id?: string; author?: GhAuthor } | null)[] };
+};
+/** `gh api graphql`'s data, with the PRs asked for as `p<i>` parts. */
+export type GhGraphData = { viewer?: { login?: string }; [part: string]: { pullRequest?: GhGraphPr | null } | { login?: string } | null | undefined };
+/** The PR in part `p<i>` of an answer, if GitHub gave it. */
+export function graphPr(data: GhGraphData, i: number): GhGraphPr | undefined {
+  const part = data[`p${i}`];
+  return (part && 'pullRequest' in part && part.pullRequest) || undefined;
+}
 export type PrStatus = {
   title: string;
   state: PrState;
@@ -359,8 +382,8 @@ const PR_FIELDS = 'title state isDraft mergeable reviewDecision updatedAt commit
 
 const CI: Record<string, PrCi> = { SUCCESS: 'passed', FAILURE: 'failed', ERROR: 'failed', PENDING: 'pending', EXPECTED: 'pending' };
 
-export function prStatusOf(v: any): PrStatus {
-  const threads: any[] = Array.isArray(v?.reviewThreads?.nodes) ? v.reviewThreads.nodes : [];
+export function prStatusOf(v: GhGraphPr | null | undefined): PrStatus {
+  const threads = Array.isArray(v?.reviewThreads?.nodes) ? v.reviewThreads.nodes : [];
   return {
     title: String(v?.title ?? ''),
     state: prState(v ?? {}),
@@ -393,9 +416,9 @@ export async function prStatus(urls: string[], gh: Gh = realGh, now = Date.now()
   // GraphQL's string syntax, so nothing from a link reaches the query raw.
   const parts = ask.map(({ ref }, i) => `p${i}:repository(owner:${JSON.stringify(ref.owner)},name:${JSON.stringify(ref.repo)}){pullRequest(number:${ref.number}){${PR_FIELDS}}}`);
   const r = await run(gh, ['api', 'graphql', '-f', `query={${parts.join(' ')}}`]);
-  let data: any;
+  let data: GhGraphData | undefined;
   try {
-    data = JSON.parse(r.stdout)?.data;
+    data = (JSON.parse(r.stdout) as { data?: GhGraphData })?.data;
   } catch {
     data = undefined;
   }
@@ -403,7 +426,7 @@ export async function prStatus(urls: string[], gh: Gh = realGh, now = Date.now()
   // the rest, with gh exiting non-zero: so only nothing at all is a failure.
   if (!data) throw new Error(failed(r.stderr));
   ask.forEach(({ url, key }, i) => {
-    const pr = data[`p${i}`]?.pullRequest;
+    const pr = graphPr(data, i);
     if (!pr) return;
     const status = prStatusOf(pr);
     statusCache.set(key, { at: now, status });

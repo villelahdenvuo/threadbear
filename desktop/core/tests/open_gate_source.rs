@@ -88,7 +88,7 @@ const ALLOWED_LINES: &[(&str, &str, usize)] = &[
     ("gpui/build.rs", "let status = Command::new(&compiler).args([\"-parse-as-library\", \"-emit-object\", \"-O\", \"-import-objc-header\", \"native/text_selection.h\", \"-module-name\", \"ThreadbearTranslation\", \"-target\", &format!(\"{arch}-apple-macosx13.0\"), \"-sdk\", sdk, \"-module-cache-path\"]).arg(out.join(\"swift-modules\"))", 1),
     // Reads the Mac's efficiency cores with sysctl's fixed keys, to pick the
     // update build's priority (app_update.rs's efficiency_cores). Opens nothing.
-    ("gpui/src/app_update.rs", r#"let read = |key: &str| Command::new("/usr/sbin/sysctl").args(["-n", key]).stderr(Stdio::null()).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned());"#, 1),
+    ("gpui/src/app_update.rs", r#"let read = |key: &str| { Command::new("/usr/sbin/sysctl").args(["-n", key]).stderr(Stdio::null()).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()) };"#, 1),
     // Encodes the gate's checked descriptor (an application's icon is its icns file).
     ("gpui/native/file_icons.m", "int tb_file_icon_png(int fd, long long length, void **output) {", 1),
     // Reads only the system display preference. This NSWorkspace property

@@ -98,10 +98,11 @@ export function harness(): Harness {
 // Waits for a thread's folder's patches to have loaded: they load in the
 // background, so an action run straight after a thread starts can miss them.
 export async function patchesLoaded(h: Harness, id: string): Promise<void> {
-  const runner = h.runner as any;
+  // patchSet is the runner's own; reached here as the runner reaches it.
+  const runner = h.runner as unknown as { threads: Map<string, { rt: { patches?: { loaded?: boolean } } }>; patchSet(st: unknown): void };
   const st = runner.threads.get(id);
   runner.patchSet(st);
-  await until(() => st.rt.patches?.loaded === true, "the thread's patches to load");
+  await until(() => st?.rt.patches?.loaded === true, "the thread's patches to load");
 }
 
 // Puts a git ahead of the real one on PATH that takes half a second over

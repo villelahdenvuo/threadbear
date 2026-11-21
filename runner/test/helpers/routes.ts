@@ -297,9 +297,9 @@ function lastFailed(events: Record<string, any>[]): boolean {
 }
 
 // The reason line of the approval card still open, if one is.
-function openCardReason(events: Record<string, any>[]): string | undefined {
+function openCardReason(events: { type?: unknown; approvalId?: unknown; reason?: unknown }[]): string | undefined {
   const open = events.filter((e) => e.type === 'approval.requested' && !events.some((r) => r.type === 'approval.resolved' && r.approvalId === e.approvalId)).at(-1);
-  return open?.reason;
+  return typeof open?.reason === 'string' ? open.reason : undefined;
 }
 
 // The done card's follow-ups: the last turn's end.
