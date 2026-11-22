@@ -209,7 +209,10 @@ before(() => {
   agents = path.join(root, 'LaunchAgents');
   for (const d of ['scripts', 'src', 'bin']) fs.mkdirSync(path.join(rdir, d), { recursive: true });
   // The real scripts and launch.mjs, around a fake runner with no packages.
-  // Every script, so one a deploy script starts importing comes too.
+  // Every script, not a list: deploy.mjs came to import windows-task.mjs (17
+  // Nov) and deploy-backend.mjs backend-stones.mjs (19 Nov), the list had
+  // neither, and every one of these failed, unseen as tb land runs --quick.
+  // Eight forks found it bringing in the 20 Nov release.
   for (const f of fs.readdirSync(path.join(RUNNER, 'scripts'))) {
     if (/\.(mjs|sh)$/.test(f) && fs.statSync(path.join(RUNNER, 'scripts', f)).isFile()) fs.copyFileSync(path.join(RUNNER, 'scripts', f), path.join(rdir, 'scripts', f));
   }

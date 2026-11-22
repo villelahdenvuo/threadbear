@@ -58,9 +58,10 @@ done
 
 # Started from the app, PATH is the bare system one: git, ssh, rsync and
 # codesign are in /usr/bin, and cargo, for a build here, in ~/.cargo/bin
-# (rustup's own install) or Homebrew's bin (a Homebrew rustup), where the
-# app's builds failed with "cargo: command not found" (20 Nov). Homebrew's
-# bin goes on only when neither is found, so it never shadows a rustup.
+# (rustup's own install) or, failing that, Homebrew's bin: a Homebrew rust
+# failed every update build with "cargo: command not found" (Ville, 20 Nov).
+# Homebrew's bin goes on only when neither is found, so it never shadows a
+# rustup (or a test's own cargo).
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.cargo/bin:$PATH"
 command -v cargo >/dev/null || command -v rustup >/dev/null ||
   export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
