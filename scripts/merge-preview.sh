@@ -11,9 +11,18 @@
 # out (Codex's review, 9 Nov 2026: this repo's own config can name one).
 # Needs git 2.40 or later (merge-tree --write-tree, --attr-source).
 #
-# Usage: scripts/merge-preview.sh <commit> [<base>, main by default]
+# Usage: scripts/merge-preview.sh [--prepare <dir>] <commit> [<base>, main by default]
+#
+# --prepare <dir>: also writes each clashing file, with git's conflict
+# markers, to <dir>/files/<path>, and the two commits to <dir>/base and
+# <dir>/commit, so the clashes can be settled there while the owner
+# decides. <dir> must be outside every checkout (nothing in it is loaded
+# or run). After go, scripts/merge-prepared.sh <dir> merges and puts them
+# in (docs/bringing-in-updates.md, section 2).
 set -eu
-commit=${1:?usage: scripts/merge-preview.sh <commit> [base]}
+prepare=""
+if [ "${1:-}" = "--prepare" ]; then prepare=${2:?usage: scripts/merge-preview.sh --prepare <dir> <commit> [base]}; shift 2; fi
+commit=${1:?usage: scripts/merge-preview.sh [--prepare <dir>] <commit> [base]}
 base=${2:-refs/heads/main}
 top=$(git rev-parse --show-toplevel)
 objects=$(cd "$top" && git rev-parse --path-format=absolute --git-path objects)
@@ -42,6 +51,26 @@ cat "$tmp/out"
 tree=$(head -n 1 "$tmp/out")
 echo
 if [ "$status" -eq 1 ]; then echo "It clashes in the files above."; elif [ "$status" -ne 0 ]; then echo "git merge-tree failed ($status)."; exit "$status"; else echo "It merges cleanly."; fi
+if [ -n "$prepare" ] && [ "$status" -eq 1 ]; then
+  mkdir -p "$prepare"
+  prepare=$(cd "$prepare" && pwd -P)
+  case "$prepare/" in "$(cd "$top" && pwd -P)/"*) echo "--prepare: $prepare is inside this checkout; use a folder outside it (\${TMPDIR:-/tmp}/...)." >&2; exit 2 ;; esac
+  rm -rf "$prepare/files"
+  mkdir -p "$prepare/files"
+  printf '%s\n' "$base_id" > "$prepare/base"
+  printf '%s\n' "$commit_id" > "$prepare/commit"
+  # The clashing paths: the lines after the tree id, up to the blank line.
+  sed -n '2,/^$/p' "$tmp/out" | sed '/^$/d' | sort -u > "$prepare/clashes"
+  while IFS= read -r f; do
+    # Git never stores a path with a .. part or a leading /, but a path
+    # goes into a folder here, so check anyway.
+    case "/$f/" in */../*|*/./*|//*) echo "--prepare: skipped an odd path: $f" >&2; continue ;; esac
+    mkdir -p "$prepare/files/$(dirname "$f")"
+    clean cat-file blob "$tree:$f" > "$prepare/files/$f" 2>/dev/null || echo "--prepare: no merged copy of $f (deleted on one side?); settle it after go." >&2
+  done < "$prepare/clashes"
+  echo
+  echo "Wrote the clashing files, with conflict markers, under $prepare/files: settle them there."
+fi
 echo
 echo "What it changes against main:"
 clean --attr-source="$empty" diff --no-ext-diff --no-textconv --stat "$base_id" "$tree"
@@ -100,6 +129,10 @@ while IFS="$(printf '\t')" read -r _ f subject; do
   echo "The release has a format commit main doesn't: $f ($subject)."
 done < "$tmp/sorted"
 oldest=$(head -n 1 "$tmp/sorted" | cut -f 2)
+if [ -n "$prepare" ] && [ -d "$prepare/files" ]; then
+  rm -rf "$prepare/files" "$prepare/clashes"
+  echo "(--prepare: nothing kept, as a release with a format commit merges with replay-over-format.sh; settle its clashes after go.)"
+fi
 echo "Clashes in the files they formatted are formatting only: after they say go, merge with"
 echo "scripts/replay-over-format.sh --merge $commit_id (docs/bringing-in-updates.md, section 4),"
 echo "which settles those by itself. The real clashes up to it, merging the commit before it:"

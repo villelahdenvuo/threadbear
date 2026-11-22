@@ -68,10 +68,28 @@ git log --no-merges --no-ext-diff --no-textconv main..<commit>
 and for each clash, both sides' commits, so you can say how you'd settle
 it (section 4).
 
+Then settle the clashes before you ask, so a go goes straight to the
+checks (Ville, 22 Nov 2026: about 5 minutes of a 35-minute bring-in was
+settling clashes after go). Run the preview again with a folder of this
+thread's own outside every checkout:
+
+```sh
+scripts/merge-preview.sh --prepare "${TMPDIR:-/tmp}/tb-bring-in-<thread id>" <commit>
+```
+
+It writes each clashing file, with git's conflict markers, under that
+folder's `files/`. Settle each one there with Edit, as section 4 says,
+until none has a marker left. That folder isn't a worktree, so nothing in
+it is loaded or run, and you run nothing on its files: only edit them. A
+release with a format commit keeps nothing there (its clashes are settled
+after go, by replay-over-format.sh). If one clash needs the owner to
+choose, settle the rest and ask about that one with the go.
+
 ## 3. Tell them, and ask
 
 Tell them in a few lines what Mike's release brings, which of their own
-changes clash with it and how you'd settle each, and anything they'd need
+changes clash with it and how you settled each (they're settled already,
+in the prepared folder), and anything they'd need
 to do themselves (a change to `runner/launcher/` only takes effect after
 `runner/scripts/install-runner.sh`, which they run from a terminal). If
 the release looks halfway through something (a feature half there, a
@@ -87,7 +105,18 @@ but git's objects.
 ## 4. Once they say go: merge, settle clashes, check
 
 Threads in this repo get a worktree of their own (docs/thread-worktrees.md),
-so main doesn't move until you land. Merge there:
+so main doesn't move until you land. With the clashes settled in a
+prepared folder (section 2), merge there with:
+
+```sh
+scripts/merge-prepared.sh "${TMPDIR:-/tmp}/tb-bring-in-<thread id>" -m "Bring in Mike's release <date>"
+```
+
+It catches the branch up to the main the preview used, merges, and puts
+the settled files in. If main has moved on since, or git clashes in a file
+the preview didn't, it says so: run the preview with `--prepare` again
+and settle only what's new, or settle the new clash in the worktree and
+`git commit --no-edit`. Without a prepared folder, merge there with:
 
 ```sh
 git merge --no-ff -m "Bring in Mike's release <date>" <commit>

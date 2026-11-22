@@ -625,9 +625,12 @@ File references are where to look.
   itself. Every 5 days, when there's one your copy doesn't have, it starts
   one thread (on your own Claude or Codex login, on your default mode) that
   works out the merge without checking it out (`scripts/merge-preview.sh`,
-  in a throwaway repo under `$TMPDIR` it deletes), tells you what it brings
-  and asks; it runs nothing from the release (no checks, installs or builds)
-  until you say go, then merges, checks and lands
+  in a throwaway repo under `$TMPDIR` it deletes), writes the clashing
+  files to a folder of its own under `$TMPDIR` and settles them there
+  (`--prepare`), tells you what it brings and asks; it runs nothing from
+  the release (no checks, installs or builds) until you say go, then
+  merges (`scripts/merge-prepared.sh` puts the settled files in), checks
+  and lands
   (`runner/src/bring-in.ts`). A release Mike marks important starts one
   straight away. Settings › General › Updates from Mike, or
   `"releases": { "bringIn": 14 }` (or `"important"`, or `"off"`) in

@@ -106,3 +106,52 @@ test('the merge preview points past a format commit to the real clashes', () => 
   assert.match(real, /b\.rs/);
   assert.doesNotMatch(real, /a\.rs/);
 });
+
+// Settling the clashes while the owner decides (Ville, 22 Nov 2026: a go
+// should go straight to the checks): --prepare writes each clashing file
+// with its markers outside the checkout, and merge-prepared.sh, after go,
+// merges and puts in the settled copies. It refuses while one still has
+// markers, and catches a branch that started behind main up first.
+test('clashes settled before go go in with the merge', () => {
+  const root = tmpDir('tb-preview-prep-');
+  const repo = path.join(root, 'r');
+  fs.mkdirSync(repo);
+  git(repo, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'base\n');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-qm', 'base');
+  git(repo, 'branch', '-q', 'release');
+  git(repo, 'branch', '-q', 'thread');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'mine\n');
+  git(repo, 'commit', '-qam', 'mine');
+  git(repo, 'checkout', '-q', 'release');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'theirs\n');
+  fs.writeFileSync(path.join(repo, 'b.txt'), 'new\n');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-qm', 'theirs');
+  const release = git(repo, 'rev-parse', 'HEAD');
+  // The thread's branch, from main before its last commit.
+  git(repo, 'checkout', '-q', 'thread');
+  const prep = path.join(root, 'prep');
+  const inside = spawnSync(SHELL[0], [shPath(SCRIPT), '--prepare', path.join(repo, 'prep'), release], { cwd: repo, encoding: 'utf8', env: ENV });
+  assert.notEqual(inside.status, 0, 'a folder inside the checkout is refused');
+  const r = spawnSync(SHELL[0], [shPath(SCRIPT), '--prepare', prep, release], { cwd: repo, encoding: 'utf8', env: ENV });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.readFileSync(path.join(prep, 'clashes'), 'utf8'), 'a.txt\n');
+  assert.match(fs.readFileSync(path.join(prep, 'files', 'a.txt'), 'utf8'), /^<<<<<<< [\s\S]*mine[\s\S]*theirs/);
+  assert.equal(git(repo, 'status', '--porcelain'), '', 'nothing checked out or changed');
+  const APPLY = path.join(import.meta.dirname, '../../../scripts/merge-prepared.sh');
+  const apply = () => spawnSync(SHELL[0], [shPath(APPLY), prep, '-m', 'Bring it in'], { cwd: repo, encoding: 'utf8', env: ENV });
+  const early = apply();
+  assert.notEqual(early.status, 0);
+  assert.match(early.stderr, /conflict markers.*a\.txt/);
+  assert.equal(git(repo, 'rev-parse', 'HEAD'), git(repo, 'rev-parse', 'main^'), 'nothing changed');
+  fs.writeFileSync(path.join(prep, 'files', 'a.txt'), 'mine and theirs\n');
+  const done = apply();
+  assert.equal(done.status, 0, done.stderr + done.stdout);
+  assert.equal(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'mine and theirs\n');
+  assert.equal(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8'), 'new\n');
+  assert.equal(git(repo, 'rev-parse', 'HEAD^1'), git(repo, 'rev-parse', 'main'));
+  assert.equal(git(repo, 'rev-parse', 'HEAD^2'), release);
+  assert.equal(git(repo, 'status', '--porcelain'), '');
+});
