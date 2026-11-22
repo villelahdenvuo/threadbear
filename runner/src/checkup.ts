@@ -25,7 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { atomicWriteFileSync } from './fsutil.ts';
 import { scrubText } from './redaction.ts';
-import { repoKey, TAG_PREFIX } from './upstream.ts';
+import { repoKey, TAG_PREFIX, UPSTREAM_REF_NS } from './upstream.ts';
 import type { PatchInfo } from './protocol.ts';
 
 export const CHECKUPS_REPO = 'mikecann/threadbear';
@@ -159,24 +159,37 @@ function git(cwd: string, args: string[]): string | undefined {
   return r.status === 0 ? r.stdout.trim() : undefined;
 }
 
-function tagDate(cwd: string, tag: string): string | undefined {
-  return git(cwd, ['for-each-ref', '--format=%(creatordate:iso-strict)', `refs/tags/${tag}`]) || undefined;
-}
+type Release = { tag: string; date?: string; ref?: string };
 
-function newestRelease(cwd: string, rev: string): string | undefined {
-  return git(cwd, ['describe', '--tags', '--abbrev=0', '--match', `${TAG_PREFIX}*`, rev]);
+// The newest release in rev, by its date. Not `git describe`: on a fork's
+// main, where each release comes in as a merge's second parent, it counts
+// the fork's own side too and named the release before last (Ville, 22 Nov
+// 2026: the 21 Nov check-up said 20 Nov). The runner keeps the releases it
+// checked the signature of under refs/threadbear/upstream/<date>, not as
+// tags (upstream.ts), so both are looked at.
+function newestRelease(cwd: string, rev: string): Release | undefined {
+  const out = git(cwd, ['for-each-ref', '--merged', rev, '--format=%(refname) %(creatordate:iso-strict)', `refs/tags/${TAG_PREFIX}`, UPSTREAM_REF_NS]);
+  let best: Release | undefined;
+  for (const line of (out ?? '').split('\n')) {
+    const [ref, date] = line.split(' ');
+    if (!ref) continue;
+    const name = ref.startsWith(UPSTREAM_REF_NS) ? ref.slice(UPSTREAM_REF_NS.length) : ref.slice(`refs/tags/${TAG_PREFIX}`.length);
+    if (name.includes('/')) continue;
+    const tag = `${TAG_PREFIX}${name}`;
+    if (!best || tag > best.tag) best = { tag, ref, ...(date ? { date } : {}) };
+  }
+  return best;
 }
 
 // The release main has now, and the one it had before: main's reflog,
 // back to where the newest release wasn't in it yet.
-export function releasesOnMain(cwd: string): { release?: { tag: string; date?: string }; previous?: { tag: string; date?: string } } {
-  const now = newestRelease(cwd, 'main');
-  if (!now) return {};
-  const release = { tag: now, date: tagDate(cwd, now) };
+export function releasesOnMain(cwd: string): { release?: Release; previous?: Release } {
+  const release = newestRelease(cwd, 'main');
+  if (!release) return {};
   for (let i = 1; i <= 50; i++) {
     if (!git(cwd, ['rev-parse', '--verify', '--quiet', `main@{${i}}`])) break;
     const then = newestRelease(cwd, `main@{${i}}`);
-    if (then && then !== now) return { release, previous: { tag: then, date: tagDate(cwd, then) } };
+    if (then && then.tag !== release.tag) return { release, previous: then };
   }
   return { release };
 }
@@ -196,7 +209,7 @@ export function buildCheckup(i: CheckupInputs): Checkup {
   const last = readState(i.home).lastAt;
   const since = last ? Date.parse(last) : i.now - FIRST_LOOK_DAYS * DAY_MS;
   const sinceDays = Math.max(1, Math.round((i.now - since) / DAY_MS));
-  const tag = release?.tag;
+  const tag = release?.ref ?? release?.tag;
   const cache = new Map<string, boolean>();
   const known = (message: string) => {
     if (!tag) return false;
@@ -209,7 +222,8 @@ export function buildCheckup(i: CheckupInputs): Checkup {
     return !rel.startsWith('..') && !path.isAbsolute(rel) && git(i.checkout, ['cat-file', '-e', `${tag}:${rel.split(path.sep).join('/')}`]) !== undefined;
   };
   const note = i.note?.trim().replace(/\s+/g, ' ').slice(0, MAX_NOTE);
-  return { release, previous, sinceDays, ...countErrors(i.logLines, since, known), updateFailing: i.updateFailing, ...failingPatches(i.patches, inRelease), ...(note ? { note } : {}) };
+  const plain = (r?: Release) => (r ? { tag: r.tag, ...(r.date ? { date: r.date } : {}) } : undefined);
+  return { release: plain(release), previous: plain(previous), sinceDays, ...countErrors(i.logLines, since, known), updateFailing: i.updateFailing, ...failingPatches(i.patches, inRelease), ...(note ? { note } : {}) };
 }
 
 // Why this copy doesn't do check-ups, or undefined when it does.

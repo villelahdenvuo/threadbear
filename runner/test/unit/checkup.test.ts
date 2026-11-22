@@ -101,6 +101,30 @@ test("the release main had before comes from main's reflog", () => {
   assert.equal(r.previous?.tag, 'release/2026-11-05');
 });
 
+test("on a fork's main, where releases come in as merges, the newest release is named, from the runner's own refs too", () => {
+  const dir = tmpDir('tb-checkup-fork-');
+  const g = (...a: string[]) => execFileSync('git', ['-C', dir, '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
+  const commit = (file: string) => { fs.writeFileSync(path.join(dir, file), file); g('add', '.'); g('commit', '-q', '-m', file); };
+  g('init', '-q', '-b', 'main');
+  commit('base');
+  g('tag', '-a', '-m', 'r', 'release/2026-11-09');
+  // Mike's line: two more releases, the newest only under the runner's refs.
+  g('switch', '-q', '-c', 'mike');
+  for (let i = 0; i < 3; i++) commit(`m20-${i}`);
+  g('tag', '-a', '-m', 'r', 'release/2026-11-20');
+  commit('m21');
+  g('update-ref', 'refs/threadbear/upstream/2026-11-21', g('rev-parse', 'HEAD'));
+  // The fork's main: its own work, then each release as a merge.
+  g('switch', '-q', 'main');
+  for (let i = 0; i < 5; i++) commit(`fork-${i}`);
+  g('merge', '-q', '--no-edit', 'release/2026-11-20');
+  commit('fork-more');
+  g('merge', '-q', '--no-edit', 'refs/threadbear/upstream/2026-11-21');
+  const r = releasesOnMain(dir);
+  assert.equal(r.release?.tag, 'release/2026-11-21');
+  assert.equal(r.previous?.tag, 'release/2026-11-20');
+});
+
 test("off with releases.checkup false, and in Mike's own copy", () => {
   assert.equal(checkupOff(repo(), {}), undefined);
   assert.match(checkupOff(repo(), { releases: { checkup: false } })!, /off here/);

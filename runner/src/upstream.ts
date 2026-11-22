@@ -75,7 +75,8 @@ const STAGED_NS = 'refs/incoming/';
 const STAGED_MAIN = 'refs/incoming-main/main';
 // The releases that verified, copied from INCOMING_NS and never moved once
 // there. Their own namespaces, so the fork's own tags are never touched.
-const REF_NS = 'refs/threadbear/upstream/';
+export const UPSTREAM_REF_NS = 'refs/threadbear/upstream/';
+const REF_NS = UPSTREAM_REF_NS;
 const MAX_SUBJECTS = 50;
 // What a release's name is after release/: the local date it was tagged
 // (tagFor). Nothing else is ever looked at.
