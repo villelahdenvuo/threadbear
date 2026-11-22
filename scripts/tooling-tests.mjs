@@ -16,6 +16,7 @@
 // (main itself) it prints nothing: everything runs.
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const RUNNER = path.join(ROOT, 'runner');
@@ -66,7 +67,7 @@ export function leaveOut(changed) {
   return TOOLING_TESTS.filter((t) => fs.existsSync(path.join(RUNNER, t)) && ![...closure(`runner/${t}`)].some((f) => touched.has(f)));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const list = process.argv[2];
   const changed = list ? fs.readFileSync(list, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean) : [];
   for (const t of leaveOut(changed)) console.log(t);

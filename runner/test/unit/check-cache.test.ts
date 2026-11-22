@@ -186,6 +186,22 @@ test("in a fork, a test file that reads just what Mike's newest release has is s
   }
 });
 
+// The runner's update build lives under "Application Support": a space in
+// the script's path once made its command line do nothing at all.
+test('the command line runs from a folder with a space in its name', () => {
+  const root = tmp('space');
+  try {
+    const dir = path.join(root, 'Application Support');
+    fs.mkdirSync(dir);
+    fs.copyFileSync(path.join(repo, 'scripts/check-cache.mjs'), path.join(dir, 'check-cache.mjs'));
+    const r = spawnSync(process.execPath, [path.join(dir, 'check-cache.mjs')], { encoding: 'utf8' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /usage: check-cache\.mjs/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a record counts for a week', () => {
   const dir = tmp('records');
   try {

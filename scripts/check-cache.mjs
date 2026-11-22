@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 export const RECORD_DAYS = 7;
 const VERSION = 'check-cache 1';
@@ -376,4 +377,4 @@ function main(argv) {
   return 2;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) process.exitCode = main(process.argv.slice(2));
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) process.exitCode = main(process.argv.slice(2));
