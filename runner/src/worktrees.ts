@@ -2632,7 +2632,7 @@ export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolea
       if (!tip) return { removed: false, reason: `git couldn't read ${w.path}` };
       // What it's set aside at must be on main too: a commit made since the
       // branch was looked at would be left on no branch (Codex's review).
-      if (!(await git(w.mainCheckout, ['merge-base', '--is-ancestor', tip, MAIN])).ok) return { removed: false, reason: `${w.branch} has commits that aren't on ${MAIN}` };
+      if (!(await landedOnMain(w.mainCheckout, tip))) return { removed: false, reason: `${w.branch} has commits that aren't on ${MAIN}` };
       if (!stillOurs()) return LET_GO;
       if (!(here = worktreeFolderNow(w, head))) return CHANGED;
       if ((await git(here, ['checkout', '-q', '--detach'])).ok) {
@@ -2663,7 +2663,7 @@ export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolea
     // the first look stays, with its folder). Before the last status, so
     // nothing slow comes between that and the removal.
     const at = await gitOut(here, ['rev-parse', 'HEAD']);
-    if (!at || !(await git(w.mainCheckout, ['merge-base', '--is-ancestor', at, MAIN])).ok) return { removed: false, reason: `${w.branch} has commits that aren't on ${MAIN}` };
+    if (!at || !(await landedOnMain(w.mainCheckout, at))) return { removed: false, reason: `${w.branch} has commits that aren't on ${MAIN}` };
     if (!stillOurs()) return LET_GO;
     if (!(here = worktreeFolderNow(w, head))) return CHANGED;
     const edited = await editedSince(here);
