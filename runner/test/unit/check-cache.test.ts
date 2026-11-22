@@ -125,6 +125,67 @@ test("a test file's key follows its imports and the files it names, and the test
   }
 });
 
+test("a type-only import isn't read: Node strips it before the test runs", () => {
+  const root = tmp('types');
+  try {
+    const put = writer(root);
+    put('runner/src/big.ts', 'export type Big = { a: number };\nexport const big = 1;\n');
+    put('runner/src/t.ts', "import type { Big } from './big.ts';\nexport type { Big } from './big.ts';\nexport const t: Big | null = null;\n");
+    // `import { type X }` still loads the file, so it counts.
+    put('runner/src/v.ts', "import { type Big } from './big.ts';\nexport const v: Big | null = null;\n");
+    put('runner/test/unit/t.test.ts', "import { t } from '../../src/t.ts';\n");
+    put('runner/test/unit/v.test.ts', "import { v } from '../../src/v.ts';\n");
+    const files = ['test/unit/t.test.ts', 'test/unit/v.test.ts'];
+    const before = testKeys(root, treeOf(root), files) as Map<string, string>;
+    put('runner/src/big.ts', 'export type Big = { a: string };\nexport const big = 2;\n');
+    const after = testKeys(root, treeOf(root), files) as Map<string, string>;
+    assert.equal(after.get('test/unit/t.test.ts'), before.get('test/unit/t.test.ts'));
+    assert.notEqual(after.get('test/unit/v.test.ts'), before.get('test/unit/v.test.ts'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("in a fork, a test file that reads just what Mike's newest release has is skipped as passed there", () => {
+  const root = tmp('release');
+  const commit = (msg: string) => {
+    git(root, 'add', '-A');
+    git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-qm', msg);
+  };
+  try {
+    const put = writer(root);
+    git(root, 'init', '-q');
+    put('runner/src/mike.ts', 'export const mike = 1;\n');
+    put('runner/src/shared.ts', 'export const shared = 1;\n');
+    put('runner/test/unit/mike.test.ts', "import { mike } from '../../src/mike.ts';\n");
+    put('runner/test/unit/shared.test.ts', "import { shared } from '../../src/shared.ts';\n");
+    put('runner/test/helpers/clean-env.ts', '');
+    put('check.sh', '');
+    commit('release');
+    git(root, 'update-ref', 'refs/threadbear/upstream/2026-11-21', 'HEAD');
+    // The fork's own change to one file, and to the check and its helpers.
+    put('runner/src/shared.ts', 'export const shared = 2;\n');
+    put('runner/test/helpers/clean-env.ts', "import './git-timeout.ts';\n");
+    put('runner/test/helpers/git-timeout.ts', '// the fork\n');
+    put('check.sh', '# the fork\n');
+    commit('fork');
+    const records = path.join(root, '.records');
+    const files = ['test/unit/mike.test.ts', 'test/unit/shared.test.ts'];
+    const tree = path.join(root, '.tree');
+    const cli = (env: NodeJS.ProcessEnv = {}) => {
+      const r = spawnSync(process.execPath, [path.join(repo, 'scripts/check-cache.mjs'), 'tests', tree, root, records, ...files],
+        { cwd: path.join(root, 'runner'), encoding: 'utf8', env: { ...process.env, ...env } });
+      assert.equal(r.status, 0, r.stderr);
+      return r.stdout.trim().split('\n').map((l) => l.split(' ').slice(0, 2).join(' ') + (l.includes("Mike's release 2026-11-21") ? ' (release)' : ''));
+    };
+    assert.equal(spawnSync(process.execPath, [path.join(repo, 'scripts/check-cache.mjs'), 'tree', root, tree]).status, 0);
+    assert.deepEqual(cli(), ['skip test/unit/mike.test.ts (release)', 'run test/unit/shared.test.ts']);
+    assert.deepEqual(cli({ THREADBEAR_CHECK_TRUST_RELEASE: 'off' }), ['run test/unit/mike.test.ts', 'run test/unit/shared.test.ts']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a record counts for a week', () => {
   const dir = tmp('records');
   try {

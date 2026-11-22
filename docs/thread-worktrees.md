@@ -475,6 +475,14 @@ ok    runner unit tests      94s  (skipped 301 test files that passed with what 
   'scripts', 'x.sh')`), plus the runner's packages and lockfile, the test
   helpers every file loads, and Node. The runner's own code names files
   all over to tell people about them, so from there only imports count.
+  `import type` and `export type ... from` don't count: Node strips them,
+  and the typecheck step covers them.
+- In a fork, a test file whose every file is byte for byte as in Mike's
+  newest release already in HEAD (`refs/threadbear/upstream/<date>`, or a
+  `release/<date>` tag) is skipped as passed there: his main takes commits
+  only through his check. The check's files and the test helpers around
+  every file are left out of that match. `THREADBEAR_CHECK_TRUST_RELEASE=off`
+  turns it off.
 - Every key holds check.sh and check-cache.mjs: changing the check reruns
   everything.
 - A failed run still records the files that passed, so the next check runs

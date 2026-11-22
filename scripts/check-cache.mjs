@@ -20,7 +20,8 @@
 //       prints the step's key, or nothing for a step that's never skipped
 //   node scripts/check-cache.mjs tests <tree> <checkout> <records> <file...>
 //       for each test file (from runner/): "run <file> <key>" or
-//       "skip <file> <key> <when and where it passed>"
+//       "skip <file> <key> <when and where it passed>" (or "as in Mike's
+//       release <date>": the section on releases below)
 //
 // The records are empty-ish files named by key, under check.sh's records
 // folder (~/Library/Caches/Threadbear/check-passes), shared by every
@@ -176,6 +177,10 @@ export function stepKey(tree, name, args, { root = '', tools = '' } = {}) {
 const CODE = /\.(ts|mts|cts|tsx|js|mjs|cjs|sh|bash|pl)$/;
 const TEST_SIDE = /^(runner\/test\/|scripts\/|runner\/scripts\/|runner\/bin\/|desktop\/scripts\/|[^/]+\.(sh|pl)$)/;
 const runsAsProgram = (f) => CODE.test(f) || /(^|\/)bin\/[^/.]+$/.test(f);
+// `import type` and `export type ... from` are gone before the code runs
+// (Node strips types), so a test doesn't read what they name: the typecheck
+// step covers those. `import { type X }` stays, as Node still loads the file.
+const TYPE_ONLY = /^[ \t]*(?:import|export)[ \t]+type[ \t][^;'"`]*?\bfrom[ \t]*['"][^'"]+['"];?/gm;
 
 // What one file reads: its relative imports, and any string in it that names
 // a file or folder of the checkout ('docs/guide.md', path.join(ROOT,
@@ -210,6 +215,7 @@ export function makeReader(root, tree) {
     if (!runsAsProgram(file) || !tree.has(file) || CHECK_FILES.includes(file)) return out;
     let text;
     try { text = fs.readFileSync(path.join(root, file), 'utf8'); } catch { return out; }
+    if (/\.(ts|mts|cts|tsx)$/.test(file)) text = text.replace(TYPE_ONLY, '');
     const here = path.posix.dirname(file);
     // The app's own code (runner/src and the like) names scripts, docs and
     // folders all over, mostly to tell an agent or a person about them, and
@@ -264,16 +270,61 @@ export function makeReader(root, tree) {
   return { direct, closure };
 }
 
-export function testKeys(root, tree, files) {
+export function testKeys(root, tree, files, { withFiles = false } = {}) {
   const reader = makeReader(root, tree);
   const common = new Set([...CHECK_FILES]);
   for (const f of TEST_FILES) for (const g of reader.closure(f)) common.add(g);
+  // The helpers loaded around every test file (and what they load): how the
+  // tests are run, not what they test.
+  const harness = new Set();
+  for (const f of TEST_FILES) if (f.startsWith('runner/test/helpers/')) for (const g of reader.closure(f)) harness.add(g);
   const out = new Map();
   for (const t of files) {
-    const all = reader.closure(`runner/${t}`);
-    out.set(t, keyOf(tree, [...all, ...common], ['test', `file ${t}`, `node ${process.version}`]));
+    const all = [...reader.closure(`runner/${t}`), ...common];
+    const key = keyOf(tree, all, ['test', `file ${t}`, `node ${process.version}`]);
+    out.set(t, withFiles ? { key, files: all, harness } : key);
   }
   return out;
+}
+
+// ---- Mike's releases --------------------------------------------------------
+
+// In a fork, a test file that reads exactly what Mike's newest release has
+// (every file it reaches, byte for byte) passed his check already: his main
+// takes commits only through tb land's check, and a release is a main commit
+// his runner ran for six hours and GitHub's checks passed on
+// (docs/setup-and-updates.md, "Releases, not Mike's main"). So it isn't run
+// again here. Ville, 22 Nov 2026: "If Mike has changed the runner but I
+// haven't it shouldn't need to rerun checks as Mike ran them before
+// releasing". The check's own files, and the test helpers loaded around
+// every test file (the fork's git timeout guard), are left out of the
+// match: those are how the fork runs tests, not what they test.
+// THREADBEAR_CHECK_TRUST_RELEASE=off turns it off.
+
+// The newest verified release already in HEAD: { name, tree } or undefined.
+export function releaseIn(root) {
+  if (process.env.THREADBEAR_CHECK_TRUST_RELEASE === 'off') return undefined;
+  const git = (args) => spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  // refs/threadbear/upstream/ holds the releases the runner checked the
+  // signature of (runner/src/upstream.ts); older copies have the tags.
+  let name = '';
+  for (const ns of ['refs/threadbear/upstream/', 'refs/tags/release/']) {
+    const r = git(['for-each-ref', '--merged', 'HEAD', '--sort=-refname', '--count=1', '--format=%(refname)', ns]);
+    if (r.status === 0 && r.stdout.trim()) { name = r.stdout.trim(); break; }
+  }
+  if (!name) return undefined;
+  const ls = git(['ls-tree', '-r', '-z', `${name}^{commit}`]);
+  if (ls.status !== 0) return undefined;
+  const tree = new Map();
+  for (const entry of ls.stdout.split('\0')) {
+    const m = /^(\d+) \w+ ([0-9a-f]+)\t(.+)$/s.exec(entry);
+    if (m && m[1] !== '160000') tree.set(m[3], m[2]);
+  }
+  return { name: name.replace(/^refs\/(threadbear\/upstream|tags\/release)\//, ''), tree };
+}
+
+export function sameAsRelease(tree, release, files, harness = new Set()) {
+  return files.every((f) => CHECK_FILES.includes(f) || harness.has(f) || release.tree.get(f) === tree.get(f));
 }
 
 // When a key passed: the record's text, or undefined if there's none or it's
@@ -309,8 +360,13 @@ function main(argv) {
     const [treeFile, root, records, ...files] = rest;
     const tree = readTree(treeFile);
     const lines = [];
-    for (const [t, key] of testKeys(root, tree, files)) {
-      const when = passed(records, 'tests', key);
+    let release;
+    for (const [t, { key, files: read, harness }] of testKeys(root, tree, files, { withFiles: true })) {
+      let when = passed(records, 'tests', key);
+      if (!when) {
+        if (release === undefined) release = releaseIn(root) ?? null;
+        if (release && sameAsRelease(tree, release, read, harness)) when = `as in Mike's release ${release.name}`;
+      }
       lines.push(when ? `skip ${t} ${key} ${when}` : `run ${t} ${key}`);
     }
     if (lines.length) console.log(lines.join('\n'));
