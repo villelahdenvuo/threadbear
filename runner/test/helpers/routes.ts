@@ -294,8 +294,8 @@ function loginNotes(events: Record<string, any>[]): string[] {
   return events.filter((e) => e.type === 'system.note' && (e.login === true || e.savedMessage === true || e.move)).map((e) => String(e.text));
 }
 
-function movesOf(events: Record<string, any>[]): string[] {
-  return events.filter((e) => e.type === 'system.note' && e.move).map((e) => `${e.move.from}>${e.move.to}`);
+function movesOf(events: { type?: unknown; move?: { from: string; to: string } }[]): string[] {
+  return events.flatMap((e) => (e.type === 'system.note' && e.move ? [`${e.move.from}>${e.move.to}`] : []));
 }
 
 function lastFailed(events: Record<string, any>[]): boolean {

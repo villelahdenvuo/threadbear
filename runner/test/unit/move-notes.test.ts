@@ -50,7 +50,7 @@ test('another Mac plays a move row as the move note it was, and keeps why the ru
     { seq: 3, role: 'note', text: 'Woke up.', move: { from: 'hibernating', to: 'somewhere', by: 'mike' }, at: at(2) },
     { seq: 4, role: 'user', text: 'Carry on.', origin: 'runner', wakeReason: 'The connection came back', turn: 'bbbb2222', at: at(3) },
   ];
-  const ev = relayEvents('t', rows, { runnerId: 'phone', status: 'idle' }, [], false, 'Phone') as Record<string, any>[];
+  const ev = relayEvents('t', rows, { runnerId: 'phone', status: 'idle' }, [], false, 'Phone') as { type: string; move?: unknown; login?: unknown; wakeReason?: unknown }[];
   const notes = ev.filter((e) => e.type === 'system.note');
   assert.deepEqual(notes[0]!.move, { from: 'inbox', to: 'hibernating', by: 'mike' });
   assert.equal(notes[0]!.login, undefined);

@@ -1005,6 +1005,14 @@ public final class FakeBackend: Backend, @unchecked Sendable {
                 // A reply button, to see one pressed (-ThreadbearDo "press a4 prbtn001").
                 PhoneMessage(seq: 6, role: .assistant, text: "All 214 tests pass with the flags gone. [Open a pull request](button:prbtn001)", turn: "f2",
                              buttons: [MessageButton(id: "prbtn001", title: "Open a pull request", kind: .start, target: "api")], at: ago(190)),
+                // Put away and brought back: the Mac's move divider.
+                PhoneMessage(seq: 7, role: .note, text: "Hibernated by you until 9 am.", move: ThreadMove(from: "inbox", to: "hibernating", by: "mike"), at: ago(185)),
+                PhoneMessage(seq: 8, role: .note, text: "Woken by you after 1 hour.", move: ThreadMove(from: "hibernating", to: "inbox", by: "mike"), at: ago(125)),
+                PhoneMessage(seq: 9, role: .user, text: "Open the pull request now", turn: "f3", at: ago(124)),
+                PhoneMessage(seq: 10, role: .assistant, text: "The network dropped before I could push. I'll carry on when it's back.", turn: "f3", at: ago(123)),
+                // The runner's own message, with why it sent it, on the divider.
+                PhoneMessage(seq: 11, role: .user, text: "The connection is back. Carry on from where you left off.", origin: "runner", turn: "f4", wakeReason: "The connection came back", at: ago(100)),
+                PhoneMessage(seq: 12, role: .assistant, text: "Pushed and opened the pull request.", turn: "f4", at: ago(99)),
             ],
             "a5": [
                 PhoneMessage(seq: 1, role: .user, text: "Okay, let's go with it.", at: ago(8)),
