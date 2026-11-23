@@ -125,6 +125,20 @@ class TurnsTest {
         assertEquals(1, Turns.lastShown(messages)?.seq)
     }
 
+    @Test fun aRunnersReasonAndAMoveCome() {
+        val t = java.time.Instant.parse("2026-11-23T06:00:00Z")
+        val gap = TurnGap(1, t, t.plusSeconds(3600), runnerWake = "The connection came back")
+        assertEquals("1 h later · The connection came back", gap.label)
+        assertEquals("1 h later · Threadbear woke it", gap.copy(runnerWake = " ").label)
+        val note = parseJson("""{"seq":5,"role":"note","text":"Hibernated by you.","move":{"from":"inbox","to":"hibernating","by":"mike"},"at":"2026-11-23T06:23:14.000Z"}""") as JsonObject
+        val row = PhoneMessage.read(note)
+        assertEquals(ThreadMove("inbox", "hibernating", "mike"), row.move)
+        assertEquals(ThreadMove.Icon.HIBERNATE, row.move?.icon)
+        assertEquals(ThreadMove.Icon.WAKE, ThreadMove("hibernating", "inbox").icon)
+        assertEquals("Hibernated by you", ThreadMove.words(row.text))
+        assertEquals("Mon 23 Nov, 6:23 am", ThreadMove.`when`(row.at, java.time.ZoneOffset.UTC))
+    }
+
     @Test fun gapsSayHowLongAndWhy() {
         assertEquals("Moments later", TurnGap.later(1.0))
         assertEquals("6 min later", TurnGap.later(360.0))
@@ -169,6 +183,7 @@ class TurnsTest {
                     wokeBy = m.arr("wokeBy")?.map { w -> (w as JsonObject).let { WokeTask(it.str("kind")!!, it.str("description")!!) } },
                     at = T0.plusMillis((m.num("at")!! * 1000).toLong()),
                     plan = m.bool("plan") ?: false,
+                    wakeReason = m.str("wakeReason"),
                 )
             }
             assertEquals(o.strings("expect"), Turns.fold(rows, input.bool("busy")!!).map { shown(it) }, o.str("name"))

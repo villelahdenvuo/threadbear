@@ -21,7 +21,7 @@ import path from 'node:path';
 test('phone reads review previews and submits a revision-checked answer through Convex', phoneReviewScenario);
 
 type Route = 'relay' | 'phone';
-type Field = 'needs' | 'asks' | 'next' | 'looseEnds' | 'review' | 'plans' | 'messages' | 'notes' | 'pictures' | 'failed' | 'origins' | 'cardReason';
+type Field = 'needs' | 'asks' | 'next' | 'looseEnds' | 'review' | 'plans' | 'messages' | 'notes' | 'moves' | 'pictures' | 'failed' | 'origins' | 'cardReason';
 
 // Differences that are meant, each with why. A test below fails once one
 // of these stops being a difference, so the list can't outlive its reason.
@@ -42,7 +42,7 @@ function pick(v: View, field: Field): unknown {
       return field === 'needs' || field === 'review' || field === 'cardReason' ? (v[field] ?? null) : v[field];
   }
 }
-const FIELDS: Field[] = ['needs', 'asks', 'next', 'looseEnds', 'review', 'plans', 'messages', 'notes', 'pictures', 'failed', 'origins', 'cardReason'];
+const FIELDS: Field[] = ['needs', 'asks', 'next', 'looseEnds', 'review', 'plans', 'messages', 'notes', 'moves', 'pictures', 'failed', 'origins', 'cardReason'];
 const known = (route: Route, field: Field) => KNOWN.find((k) => k.route === route && k.field === field);
 
 for (const s of SCENARIOS) {
@@ -96,6 +96,12 @@ test("a card's reason reaches all three, not just nowhere on each", async () => 
   const s = SCENARIOS.find((x) => x.name === 'an approval card that says what made it ask')!;
   const { views } = await threeWays(s.play);
   for (const route of ['here', 'relay', 'phone'] as const) assert.match(views[route].cardReason ?? '', /can't follow `node server\.mjs`/, route);
+});
+
+test("a thread's moves reach all three, for the divider each draws", async () => {
+  const s = SCENARIOS.find((x) => x.name === 'a thread hibernated, woken by a message, archived and brought back')!;
+  const { views } = await threeWays(s.play);
+  for (const route of ['here', 'relay', 'phone'] as const) assert.deepEqual(views[route].moves, ['inbox>hibernating', 'hibernating>inbox', 'inbox>archived', 'archived>inbox'], route);
 });
 
 // 17 Nov 2026: a picture pasted on one Mac into the other's thread reached

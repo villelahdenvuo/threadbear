@@ -424,8 +424,10 @@ An update that leaves it where it was writes nothing. The note comes before
 the message that brought the thread back. The runner writes these in
 `threads.update` and `threads.send` (`runner/src/place-moves.ts`). The GPUI
 app draws one as a divider with an icon for `to` (or a sun for a wake), the
-words, and the date and time. Other Macs, the phone and the website show the
-words as a note. Threads from before 20 Nov have no moves: nothing recorded
+words, and the date and time. From backend API 99 the note's message row
+carries `move` (`from`, `to`, `by`), so the iPhone, Android and other Macs
+draw the same divider; the website, and a backend before 99, show the words
+as a note. Threads from before 20 Nov have no moves: nothing recorded
 them, so there is nothing to fill in.
 
 ## Who archived a thread

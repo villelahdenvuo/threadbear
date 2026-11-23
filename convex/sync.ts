@@ -716,6 +716,8 @@ function fitMessage<T extends Record<string, any>>(m: T): T | undefined {
   if (out.turn !== undefined && !isTurnId(out.turn)) delete out.turn;
   for (const f of ['origin', 'toolKind']) if (typeof out[f] === 'string') out[f] = cutBytes(out[f], 100);
   if (Array.isArray(out.wokeBy)) out.wokeBy = out.wokeBy.slice(0, 5).map((w: any) => ({ kind: cutBytes(String(w?.kind ?? ''), 40), description: cutBytes(String(w?.description ?? ''), 200) }));
+  if (out.move) out.move = { from: cutBytes(String(out.move.from ?? ''), 20), to: cutBytes(String(out.move.to ?? ''), 20), by: cutBytes(String(out.move.by ?? ''), 20) };
+  if (typeof out.wakeReason === 'string') out.wakeReason = cutBytes(out.wakeReason, 200);
   if (Array.isArray(out.buttons)) out.buttons = out.buttons.slice(0, MESSAGE_BUTTONS).map((b: any) => fitButton(b));
   // Only a user's message answers asks; a card has at most a handful.
   const cap = plan ? CAP.planDoc : CAP.messageDoc;
@@ -1760,6 +1762,8 @@ const messageDoc = v.object({
   buttons: v.optional(v.array(messageButton)), // API 59
   pictures: v.optional(v.number()), // API 87: how many pictures a user's message came with
   answers: v.optional(v.array(v.object({ action: v.string(), answer: v.string() }))), // API 89: the asks a user's message answered
+  move: v.optional(v.object({ from: v.string(), to: v.string(), by: v.string() })), // API 99: a note's move between the inbox, hibernating and the archive
+  wakeReason: v.optional(v.string()), // API 99: why the runner sent its own message
   at: v.string(),
   pagedAt: v.optional(v.number()), // an old phone asked for it (loadEarlier): phone:thread shows it for a day
 });

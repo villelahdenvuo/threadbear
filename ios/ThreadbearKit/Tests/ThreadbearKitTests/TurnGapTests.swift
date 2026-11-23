@@ -53,14 +53,33 @@ import Testing
         #expect(!Turns.fold(old, busy: false).contains { if case .gap = $0 { true } else { false } })
     }
 
-    @Test func aTurnARunnerMessageStartedHasNoDivider() {
-        let rows = [
+    /// The Mac marks a turn the runner's message started too, with why it
+    /// sent it (a thread that hibernated for the app to restart sat 14 hours
+    /// under its last reply with nothing to say so, 19 Nov).
+    @Test func aTurnARunnerMessageStartedSaysWhy() {
+        var rows = [
             m(1, .user, "Fix it", at: 0, turn: "t1"),
             m(2, .assistant, "Merged; checking after the restart.", at: 10, turn: "t1"),
             m(3, .user, "The app has restarted.", at: 300, origin: "runner", turn: "t2"),
             m(4, .assistant, "It's live.", at: 320, turn: "t2"),
         ]
-        #expect(!Turns.fold(rows, busy: false).contains { if case .gap = $0 { true } else { false } })
+        #expect(labels(Turns.fold(rows, busy: false)) == ["m1", "m3", "m2", "5 min later · Threadbear woke it", "m4"])
+        rows[2].wakeReason = "The Threadbear GPUI app restarted onto 1f103ac18"
+        #expect(labels(Turns.fold(rows, busy: true)).contains("5 min later · The Threadbear GPUI app restarted onto 1f103ac18"))
+    }
+
+    @Test func aMoveAndAWakeReasonDecode() throws {
+        let note = #"{"seq":5,"role":"note","text":"Hibernated by you.","move":{"from":"inbox","to":"hibernating","by":"mike"},"at":"2026-11-23T06:23:14.000Z"}"#
+        let row = try JSONDecoder().decode(PhoneMessage.self, from: Data(note.utf8))
+        #expect(row.move == ThreadMove(from: "inbox", to: "hibernating", by: "mike"))
+        #expect(row.move?.icon == .hibernate)
+        #expect(ThreadMove(from: "hibernating", to: "inbox").icon == .wake)
+        #expect(ThreadMove(from: "archived", to: "inbox").icon == .inbox)
+        #expect(ThreadMove.words("Hibernated by you.") == "Hibernated by you")
+        let utc = TimeZone(identifier: "UTC")!
+        #expect(ThreadMove.when(row.at, timeZone: utc) == "Mon 23 Nov, 6:23 am")
+        let sent = #"{"seq":6,"role":"user","text":"Carry on.","origin":"runner","wakeReason":"The connection came back","at":"2026-11-23T06:23:14.000Z"}"#
+        #expect(try JSONDecoder().decode(PhoneMessage.self, from: Data(sent.utf8)).wakeReason == "The connection came back")
     }
 
     @Test func aRowsWokeByDecodes() throws {

@@ -1,5 +1,5 @@
 {
-  "about": "How a thread's turns fold, as the iPhone (Turns.fold, ios/ThreadbearKit/Sources/ThreadbearKit/Turns.swift), Android (Turns.fold, android-native/kit/.../Turns.kt) and the website (fold, web/src/turns.ts) show a thread from its Convex message rows: the message that started a turn, one Worked line holding its work, then the reply. input: busy (the thread's last turn still going) and the rows: seq, role (user, assistant, tool, note), text, at (seconds after the thread began), and origin, summary, plan, turn and wokeBy when set. expect: what's shown, in order: m<seq> a message, tools <seqs> a run of tool lines, note <seq> a login's note, gap <label> the divider before a turn the agent woke up for, and a folded turn as its title (\"Worked for 2m 13s\", or \"Worked\" with no start on the page), a colon, then its items. The desktop app isn't here: it folds the runner's own events, not these rows, and desktop/core/tests/golden holds its cases (shared with the old Swift Mac app).",
+  "about": "How a thread's turns fold, as the iPhone (Turns.fold, ios/ThreadbearKit/Sources/ThreadbearKit/Turns.swift), Android (Turns.fold, android-native/kit/.../Turns.kt) and the website (fold, web/src/turns.ts) show a thread from its Convex message rows: the message that started a turn, one Worked line holding its work, then the reply. input: busy (the thread's last turn still going) and the rows: seq, role (user, assistant, tool, note), text, at (seconds after the thread began), and origin, summary, plan, turn, wokeBy and wakeReason when set. expect: what's shown, in order: m<seq> a message, tools <seqs> a run of tool lines, note <seq> a login's note, gap <label> the divider before a turn the agent or the runner's own message started, and a folded turn as its title (\"Worked for 2m 13s\", or \"Worked\" with no start on the page), a colon, then its items. The desktop app isn't here: it folds the runner's own events, not these rows, and desktop/core/tests/golden holds its cases (shared with the old Swift Mac app).",
   "platforms": ["ios", "android", "web"],
   "cases": [
     {
@@ -197,14 +197,37 @@
       "expect": ["m1", "Worked for 9m 30s: tools 2, m3, m4, m5, tools 6 7", "m8"]
     },
     {
-      "name": "a turn a runner's message started has no divider",
+      "name": "a turn a runner's message started gets a divider; with no reason, Threadbear woke it",
       "input": { "busy": false, "messages": [
         {"seq": 1, "role": "user", "text": "Fix it", "at": 0, "turn": "t1"},
         {"seq": 2, "role": "assistant", "text": "Merged; checking after the restart.", "at": 10, "turn": "t1"},
         {"seq": 3, "role": "user", "text": "The app has restarted.", "at": 300, "origin": "runner", "turn": "t2"},
         {"seq": 4, "role": "assistant", "text": "It's live.", "at": 320, "turn": "t2"}
       ] },
-      "expect": ["m1", "m3", "m2", "m4"]
+      "differs": { "web": "The website draws no divider for the wait before a turn the agent woke up for (its fold has no gap item): the iPhone, Android and the desktop do (desktop/core/src/reducer/turn_gap.rs). Adding one is a website feature, not a small fix." },
+      "expect": ["m1", "m3", "m2", "gap 5 min later · Threadbear woke it", "m4"]
+    },
+    {
+      "name": "the runner's reason for its message is on the divider (Ville, 23 Nov)",
+      "input": { "busy": false, "messages": [
+        {"seq": 1, "role": "user", "text": "Fix it", "at": 0, "turn": "t1"},
+        {"seq": 2, "role": "assistant", "text": "Waiting for the network.", "at": 10, "turn": "t1"},
+        {"seq": 3, "role": "user", "text": "Carry on.", "at": 3610, "origin": "runner", "wakeReason": "The connection came back", "turn": "t2"},
+        {"seq": 4, "role": "assistant", "text": "Back online.", "at": 3620, "turn": "t2"}
+      ] },
+      "differs": { "web": "The website draws no divider for the wait before a turn the agent woke up for (its fold has no gap item): the iPhone, Android and the desktop do (desktop/core/src/reducer/turn_gap.rs). Adding one is a website feature, not a small fix." },
+      "expect": ["m1", "m3", "m2", "gap 1 h later · The connection came back", "m4"]
+    },
+    {
+      "name": "a Woke up note already says why, so the turn the runner's message started has no divider",
+      "input": { "busy": false, "messages": [
+        {"seq": 1, "role": "user", "text": "Fix it", "at": 0, "turn": "t1"},
+        {"seq": 2, "role": "assistant", "text": "Hibernating till it lands.", "at": 10, "turn": "t1"},
+        {"seq": 3, "role": "note", "text": "Woke up after hibernating for 2 hours.", "at": 7200},
+        {"seq": 4, "role": "user", "text": "Carry on.", "at": 7201, "origin": "runner", "wakeReason": "Its wake time came", "turn": "t2"},
+        {"seq": 5, "role": "assistant", "text": "It landed.", "at": 7210, "turn": "t2"}
+      ] },
+      "expect": ["m1", "note 3", "m4", "m2", "m5"]
     },
     {
       "name": "a login's note stays out of the work, between what came before it and the reply after",
@@ -217,7 +240,8 @@
         {"seq": 6, "role": "tool", "text": "Ran git push", "at": 70, "turn": "bbbb2222"},
         {"seq": 7, "role": "assistant", "text": "Landed.", "at": 90, "turn": "bbbb2222"}
       ] },
-      "expect": ["m1", "Worked for 1m 30s: tools 2, m5, tools 6", "m3", "note 4", "m7"]
+      "differs": { "web": "The website draws no divider for the wait before a turn the agent woke up for (its fold has no gap item): the iPhone, Android and the desktop do (desktop/core/src/reducer/turn_gap.rs). Adding one is a website feature, not a small fix." },
+      "expect": ["m1", "Worked for 1m 30s: tools 2, m5, tools 6", "m3", "note 4", "gap 2s later · Threadbear woke it", "m7"]
     },
     {
       "name": "a limit hit before any work keeps the note under the limit's words",
@@ -229,7 +253,8 @@
         {"seq": 5, "role": "tool", "text": "Edited a file", "at": 4, "turn": "bbbb2222"},
         {"seq": 6, "role": "assistant", "text": "Fixed.", "at": 9, "turn": "bbbb2222"}
       ] },
-      "expect": ["m1", "Worked for 9s: m4, tools 5", "m2", "note 3", "m6"]
+      "differs": { "web": "The website draws no divider for the wait before a turn the agent woke up for (its fold has no gap item): the iPhone, Android and the desktop do (desktop/core/src/reducer/turn_gap.rs). Adding one is a website feature, not a small fix." },
+      "expect": ["m1", "Worked for 9s: m4, tools 5", "m2", "note 3", "gap 2s later · Threadbear woke it", "m6"]
     },
     {
       "name": "a thread waiting for room ends on its note",

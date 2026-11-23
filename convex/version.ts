@@ -478,4 +478,10 @@
 //    (Auto's safety check, a file that runs as code, a patch Threadbear
 //    can't follow, a rule, an MCP tool), so the phone says why as the Mac
 //    does. A runner sends it only from 98.
-export const API_VERSION = 98;
+// 99: a message row can carry `move` ({ from, to, by }) on a note for a
+//    move between the inbox, hibernating and the archive, and `wakeReason`
+//    on the runner's own message; phone:messages and the relay pass them on,
+//    so the phones draw the Mac's move divider ("Hibernated by you", a moon,
+//    the time) and its "14 h later · The connection came back". A runner
+//    sends them only to a backend of 99 or later; an older phone ignores them.
+export const API_VERSION = 99;

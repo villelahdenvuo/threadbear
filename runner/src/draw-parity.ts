@@ -36,9 +36,11 @@ export const FAMILIES: Record<string, string> = {
   block: 'Blocks in a reply (rich_block.rs, draft_block.rs)',
   link: 'Links into the thread from a reply (reply_links.rs)',
   mark: "A thread link's mark (LinkMark, link_marks.rs)",
+  move: 'A move between the inbox, hibernating and the archive, as a divider with its icon (MoveIcon, reducer/event.rs)',
 };
 
 const NOT_YET = { no: 'Not drawn yet.' };
+const MOVE_WORDS = { no: 'Shown as a plain note, without the divider, icon or time.' };
 
 export const DRAWN: Record<string, DrawRow> = {
   'row.user': { what: "The user's message", ios: 'yes', android: 'yes', web: 'yes', sign: { android: 'UserBubble' } },
@@ -61,6 +63,10 @@ export const DRAWN: Record<string, DrawRow> = {
   'row.background': { what: 'Background jobs still going', ios: 'yes', android: 'yes', web: NOT_YET, sign: { ios: 'working', android: 'working' } },
   'row.changes': { what: 'Changed files card', ios: NOT_YET, android: NOT_YET, web: NOT_YET },
   'row.gap': { what: '"6 min later" divider before a woken turn', ios: 'yes', android: 'yes', web: NOT_YET, sign: { ios: 'wokeBy', android: 'wokeBy' } },
+  'move.Hibernate': { what: 'Hibernated (a moon)', ios: 'yes', android: 'yes', web: MOVE_WORDS, sign: { ios: 'moon', android: 'Icon.HIBERNATE' } },
+  'move.Wake': { what: 'Woke up (a sun)', ios: 'yes', android: 'yes', web: MOVE_WORDS, sign: { ios: 'sun.max', android: 'Icon.WAKE' } },
+  'move.Archive': { what: 'Archived', ios: 'yes', android: 'yes', web: MOVE_WORDS, sign: { ios: 'archivebox', android: 'Icon.ARCHIVE' } },
+  'move.Inbox': { what: 'Back in the inbox', ios: 'yes', android: 'yes', web: MOVE_WORDS, sign: { ios: 'tray', android: 'Icon.INBOX' } },
   'row.planCard': { what: 'Plan first card, waiting for approval', ios: 'yes', android: 'yes', web: 'yes', sign: { ios: 'PlanCard', android: 'PlanCard', web: 'PlanCard' } },
   'row.labReview': { what: "Another lab's review of the turn", ios: 'yes', android: 'yes', web: 'yes', sign: { ios: 'ReviewRow', android: 'ReviewRow', web: 'ReviewRow' } },
   'origin.phone': { what: 'Mark on a message sent from the phone', ios: 'yes', android: 'yes', web: { no: 'The website sends as the phone, so the mark would be on the user\'s own messages.' }, sign: { ios: 'PhoneMark', android: 'PhoneMark' } },
@@ -68,7 +74,7 @@ export const DRAWN: Record<string, DrawRow> = {
   'origin.schedule': { what: 'A scheduled message, drawn as a schedule', ios: 'yes', android: 'yes', web: 'yes', sign: { ios: 'ScheduledMessageCard' } },
   'message.images': { what: 'Pictures sent with a message', ios: 'yes', android: 'yes', web: 'yes', sign: { ios: 'pasted', android: 'pasted', web: 'pastedOf' } },
   'message.origin': { what: "Who sent a message (see the origin rows)", ios: 'yes', android: 'yes', web: 'yes' },
-  'message.wakeReason': { what: "Why the runner sent its message", ios: NOT_YET, android: NOT_YET, web: NOT_YET },
+  'message.wakeReason': { what: "Why the runner sent its message, on the divider before its turn", ios: 'yes', android: 'yes', web: NOT_YET },
   'message.answers': { what: "The user's answers to a card, each under its question", ios: 'yes', android: NOT_YET, web: NOT_YET },
   'message.editOf': { what: 'An edited message', ios: NOT_YET, android: NOT_YET, web: NOT_YET },
   'message.reviewId': { what: "The user's answer to a design review", ios: 'yes', android: 'yes', web: NOT_YET, sign: { ios: 'ReviewAnswer', android: 'ReviewAnswer' } },

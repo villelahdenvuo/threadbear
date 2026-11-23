@@ -726,7 +726,7 @@ test('the uploader never follows a redirect with the bytes, nor posts them in th
 
 // ------------------------------------------------------------ step 2 and 3
 
-import { BUTTONS_API_VERSION, COMMAND_ATTEMPT_API_VERSION, LOGIN_NOTES_API_VERSION, MESSAGE_CHARS, PLAN_API_VERSION, PLAN_CHARS, toMessageDoc, toolLine, inputSummary, WokeRows, WOKE_BY_API_VERSION, type Command, type MessageDoc } from '../../src/sync.ts';
+import { BUTTONS_API_VERSION, COMMAND_ATTEMPT_API_VERSION, LOGIN_NOTES_API_VERSION, MESSAGE_CHARS, MOVE_NOTES_API_VERSION, PLAN_API_VERSION, PLAN_CHARS, toMessageDoc, toolLine, inputSummary, WokeRows, WOKE_BY_API_VERSION, type Command, type MessageDoc } from '../../src/sync.ts';
 import { remoteAllowRefused, remoteCardShowsAll } from '../../src/tools.ts';
 
 type Fake = { h: ReturnType<typeof makeHarness>; sync: ConvexSync; calls: Call[]; push: (value: unknown) => void; applied: string[]; landed: Call[] };
@@ -1796,6 +1796,27 @@ test("a woken turn's first message row says what finished, once the backend take
     await tick();
     await (sync as never as { appendMessages(m: MessageDoc[]): Promise<void> }).appendMessages([rows[0]]);
     assert.equal('wokeBy' in messagesSent(calls)[0], sent, `backend ${backend}`);
+    await sync.stop();
+  }
+});
+
+test("a move's note row carries its move, and the runner's message its wakeReason, only to a backend of 99", async () => {
+  const base = { ts: '2026-11-23T00:00:00.000Z', threadId: 't' };
+  const note = toMessageDoc('t', { ...base, seq: 5, type: 'system.note', text: 'Hibernated by you.', move: { from: 'inbox', to: 'hibernating', by: 'mike', until: '2026-11-24T09:00:00.000Z' } } as never)!;
+  assert.deepEqual(note.move, { from: 'inbox', to: 'hibernating', by: 'mike' });
+  const sent = toMessageDoc('t', { ...base, seq: 6, turnId: 'u1234567', type: 'user.message', text: 'Carry on.', images: [], origin: 'runner', wakeReason: 'The connection came back' } as never)!;
+  assert.equal(sent.wakeReason, 'The connection came back');
+  // Only the runner's own message says why.
+  assert.equal(toMessageDoc('t', { ...base, seq: 7, type: 'user.message', text: 'hi', images: [], wakeReason: 'x' } as never)!.wakeReason, undefined);
+  assert.equal(BACKEND_API_VERSION >= MOVE_NOTES_API_VERSION, true);
+  for (const [backend, kept] of [[MOVE_NOTES_API_VERSION - 1, false], [MOVE_NOTES_API_VERSION, true]] as const) {
+    const { sync, calls } = setup({ answer: (fn) => (fn === 'sync:heartbeat' ? { apiVersion: backend } : null) });
+    sync.start();
+    await tick();
+    await (sync as never as { appendMessages(m: MessageDoc[]): Promise<void> }).appendMessages([note, sent]);
+    const rows = messagesSent(calls);
+    assert.equal(rows.some((r) => 'move' in r), kept, `backend ${backend}`);
+    assert.equal(rows.some((r) => 'wakeReason' in r), kept, `backend ${backend}`);
     await sync.stop();
   }
 });

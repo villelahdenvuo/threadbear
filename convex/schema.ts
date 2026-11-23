@@ -748,6 +748,11 @@ export const appSchema = defineSchema({
     // The open card's asks a user's message answered, each its question and
     // the pick (since API 89), so the phone draws them as answers, as the Mac does.
     answers: v.optional(v.array(v.object({ action: v.string(), answer: v.string() }))),
+    // A note's move between the inbox, hibernating and the archive, for the
+    // phone's move divider, and what made the runner send its own message,
+    // for the "14 h later · ..." divider (since API 99).
+    move: v.optional(v.object({ from: v.string(), to: v.string(), by: v.string() })),
+    wakeReason: v.optional(v.string()),
     at: v.string(),
     pagedAt: v.optional(v.number()),
     // The runner key's runner that wrote it, so past its message budget its

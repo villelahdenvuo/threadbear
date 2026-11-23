@@ -41,6 +41,9 @@ export type View = {
   // The lines saying the thread's login ran out and what it did about it
   // ("Moved to ...", "... Carrying on at ..."), which the Mac keeps on show.
   notes: string[];
+  // Each move between the inbox, hibernating and the archive, as
+  // "from>to", which the Mac and the phones draw as a divider (API 99).
+  moves: string[];
   // Whether the last turn failed (the Mac's failed card, the website's
   // "The last turn failed"): a signed-out login on bruce read as an empty
   // reply on this Mac (canary, 13 Nov).
@@ -142,7 +145,7 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
   const here = (): View => {
     const t = h.runner.get(id);
     const events = h.runner.events(id, {}).events as Record<string, any>[];
-    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events), cardReason: openCardReason(events) };
+    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), moves: movesOf(events), failed: lastFailed(events), cardReason: openCardReason(events) };
   };
   let relayEvents: Record<string, any>[] = [];
   const viaRelay = async (): Promise<View> => {
@@ -156,12 +159,12 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
     // sidebar's list, for the done card's own seq.
     const listed = relay.overlay(remote()).threads.find((t) => t.threadId === id) as { looseEnds?: { seq: number; ends: { text: string }[] } } | undefined;
     const ends = listed?.looseEnds && end && listed.looseEnds.seq === end.seq ? listed.looseEnds.ends.map((e) => e.text) : [];
-    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events), cardReason: openCardReason(events) };
+    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), moves: movesOf(events), failed: lastFailed(events), cardReason: openCardReason(events) };
   };
   const viaPhone = async (): Promise<View> => {
     const r = (await call(b.ctx, mods.phone.thread!, { token: TOKEN, threadId: id })) as { thread: Record<string, any>; messages: { role: 'user' | 'assistant'; text: string; origin?: string }[] };
-    const page = await call(b.ctx, mods.phone.messages!, { token: TOKEN, threadId: id, notes: true }) as { messages: { role: string; text: string; plan?: boolean; planDecision?: string }[] };
-    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: page.messages.filter((m) => m.plan).map((m) => `${m.text.split('\n')[0]} (${m.planDecision ?? 'waiting'})`), messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0, ...(m.origin ? { origin: m.origin } : {}) })), notes: page.messages.filter(m => m.role === 'note').map(m => m.text), failed: r.thread.status === 'error', cardReason: r.thread.pendingApproval?.kind === 'approval' ? r.thread.pendingApproval.reason : undefined };
+    const page = await call(b.ctx, mods.phone.messages!, { token: TOKEN, threadId: id, notes: true }) as { messages: { role: string; text: string; plan?: boolean; planDecision?: string; move?: { from: string; to: string } }[] };
+    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: page.messages.filter((m) => m.plan).map((m) => `${m.text.split('\n')[0]} (${m.planDecision ?? 'waiting'})`), messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0, ...(m.origin ? { origin: m.origin } : {}) })), notes: page.messages.filter(m => m.role === 'note').map(m => m.text), moves: page.messages.flatMap((m) => (m.move ? [`${m.move.from}>${m.move.to}`] : [])), failed: r.thread.status === 'error', cardReason: r.thread.pendingApproval?.kind === 'approval' ? r.thread.pendingApproval.reason : undefined };
   };
   const views = { here: here(), relay: await viaRelay(), phone: await viaPhone() };
   await sync.stop();
@@ -289,6 +292,10 @@ function plansOf(events: Record<string, any>[]): string[] {
 // `savedMessage` or `move`), as their words.
 function loginNotes(events: Record<string, any>[]): string[] {
   return events.filter((e) => e.type === 'system.note' && (e.login === true || e.savedMessage === true || e.move)).map((e) => String(e.text));
+}
+
+function movesOf(events: Record<string, any>[]): string[] {
+  return events.filter((e) => e.type === 'system.note' && e.move).map((e) => `${e.move.from}>${e.move.to}`);
 }
 
 function lastFailed(events: Record<string, any>[]): boolean {

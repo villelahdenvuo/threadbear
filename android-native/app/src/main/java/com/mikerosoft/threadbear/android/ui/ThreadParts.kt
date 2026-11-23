@@ -55,10 +55,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,6 +77,7 @@ import com.mikerosoft.threadbear.kit.PhoneMessage
 import com.mikerosoft.threadbear.kit.ReviewAnswer
 import com.mikerosoft.threadbear.kit.Role
 import com.mikerosoft.threadbear.kit.ThreadItem
+import com.mikerosoft.threadbear.kit.ThreadMove
 import com.mikerosoft.threadbear.kit.TurnGap
 import com.mikerosoft.threadbear.kit.WaitingSend
 import com.mikerosoft.threadbear.kit.WaitingSends
@@ -110,7 +113,7 @@ fun ItemView(item: ThreadItem, pinned: Map<Int, List<MessageImage>> = emptyMap()
         is ThreadItem.Tools -> ToolRunView(item.items)
         is ThreadItem.Worked -> WorkedView(item.worked)
         is ThreadItem.Gap -> GapView(item.gap)
-        is ThreadItem.Note -> LoginNoteView(item.message.text)
+        is ThreadItem.Note -> NoteView(item.message)
     }
 }
 
@@ -127,7 +130,57 @@ fun MessageView(m: PhoneMessage, pinned: List<MessageImage> = emptyList()) {
         }
         Role.TOOL -> ToolRunView(listOf(m))
         // Drawn by the thread as an item of its own (ThreadItem.Note); here for a work: link's sheet.
-        Role.NOTE -> LoginNoteView(m.text)
+        Role.NOTE -> NoteView(m)
+    }
+}
+
+/**
+ * A note as the thread draws it: the Mac's move divider when it's a move
+ * between the inbox, hibernating and the archive (backend API 99), else the
+ * quiet centred line.
+ */
+@Composable
+fun NoteView(m: PhoneMessage) {
+    val move = m.move
+    if (move != null) MoveDividerView(move, m.text, m.at) else LoginNoteView(m.text)
+}
+
+/**
+ * "Hibernated by you until Monday 24 November, 9 am  Thu 20 Nov, 2:32 pm":
+ * a thin rule with an icon, the runner's words and when, so it's clear when
+ * the thread went away and what brought it back, as the Mac and the iPhone
+ * (MoveDividerView) draw it (Ville picked the divider, 20 Nov).
+ */
+@Composable
+fun MoveDividerView(move: ThreadMove, text: String, at: java.time.Instant) {
+    val faint = LocalSignals.current.faint
+    val icon = when (move.icon) {
+        ThreadMove.Icon.HIBERNATE -> Line.Moon
+        ThreadMove.Icon.WAKE -> Line.Sun
+        ThreadMove.Icon.ARCHIVE -> Line.Archive
+        ThreadMove.Icon.INBOX -> Line.Inbox
+    }
+    val full = ThreadMove.words(text) + ", " + ThreadMove.fullWhen(at)
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics(mergeDescendants = true) { contentDescription = full },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HorizontalDivider(Modifier.weight(1f).widthIn(min = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        Row(Modifier.padding(horizontal = 10.dp).weight(1f, fill = false), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = faint, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(
+                buildAnnotatedString {
+                    append(ThreadMove.words(text))
+                    append("  ")
+                    pushStyle(SpanStyle(color = faint.copy(alpha = faint.alpha * 0.7f)))
+                    append(ThreadMove.`when`(at))
+                    pop()
+                },
+                style = MaterialTheme.typography.labelSmall, color = faint, textAlign = TextAlign.Center,
+            )
+        }
+        HorizontalDivider(Modifier.weight(1f).widthIn(min = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 

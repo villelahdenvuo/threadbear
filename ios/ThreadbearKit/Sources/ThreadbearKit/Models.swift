@@ -597,9 +597,15 @@ public struct PhoneMessage: Codable, Sendable, Hashable, Identifiable {
     /// and the pick (backend API 89), which its text starts with: drawn as
     /// the Mac does, the question small over the answer.
     public var answers: [AskAnswer]?
+    /// On a note: the thread moving between the inbox, hibernating and the
+    /// archive (backend API 99), drawn as the Mac's move divider.
+    public var move: ThreadMove?
+    /// On the runner's own message: what made it send it ("The connection
+    /// came back", backend API 99), for the divider before the turn.
+    public var wakeReason: String?
     @FlexibleDate public var at: Date
 
-    public init(seq: Int, role: Role, text: String, origin: String? = nil, toolKind: String? = nil, summary: Bool = false, plan: Bool = false, turn: String? = nil, wokeBy: [WokeTask]? = nil, buttons: [MessageButton]? = nil, answers: [AskAnswer]? = nil, at: Date) {
+    public init(seq: Int, role: Role, text: String, origin: String? = nil, toolKind: String? = nil, summary: Bool = false, plan: Bool = false, turn: String? = nil, wokeBy: [WokeTask]? = nil, buttons: [MessageButton]? = nil, answers: [AskAnswer]? = nil, move: ThreadMove? = nil, wakeReason: String? = nil, at: Date) {
         self.seq = seq
         self.role = role
         self.text = text
@@ -611,10 +617,12 @@ public struct PhoneMessage: Codable, Sendable, Hashable, Identifiable {
         self.wokeBy = wokeBy
         self.buttons = buttons
         self.answers = answers
+        self.move = move
+        self.wakeReason = wakeReason
         self._at = FlexibleDate(wrappedValue: at)
     }
 
-    private enum Keys: String, CodingKey { case seq, role, text, origin, toolKind, summary, plan, turn, wokeBy, buttons, answers, at }
+    private enum Keys: String, CodingKey { case seq, role, text, origin, toolKind, summary, plan, turn, wokeBy, buttons, answers, move, wakeReason, at }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -633,6 +641,8 @@ public struct PhoneMessage: Codable, Sendable, Hashable, Identifiable {
         wokeBy = (try? c.decodeIfPresent([WokeTask].self, forKey: .wokeBy)).flatMap { $0 }
         buttons = (try? c.decodeIfPresent([MessageButton].self, forKey: .buttons)).flatMap { $0 }
         answers = (try? c.decodeIfPresent([AskAnswer].self, forKey: .answers)).flatMap { $0 }
+        move = (try? c.decodeIfPresent(ThreadMove.self, forKey: .move)).flatMap { $0 }
+        wakeReason = (try? c.decodeIfPresent(String.self, forKey: .wakeReason)).flatMap { $0 }
         _at = try c.decode(FlexibleDate.self, forKey: .at)
     }
 
@@ -649,6 +659,8 @@ public struct PhoneMessage: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(wokeBy, forKey: .wokeBy)
         try c.encodeIfPresent(buttons, forKey: .buttons)
         try c.encodeIfPresent(answers, forKey: .answers)
+        try c.encodeIfPresent(move, forKey: .move)
+        try c.encodeIfPresent(wakeReason, forKey: .wakeReason)
         try c.encode(_at, forKey: .at)
     }
 }

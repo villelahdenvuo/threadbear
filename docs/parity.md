@@ -101,11 +101,11 @@ pasted (`Desktop only for now.` for all three) is left out of this table.
 | Pictures sent with a message | `message.images` | Yes | Yes | Yes |
 | Who sent a message (see the origin rows) | `message.origin` | Yes | Yes | Yes |
 | The turn's summary reply, with the rest folded | `message.summary` | Yes | Yes | Yes |
+| Why the runner sent its message, on the divider before its turn | `message.wakeReason` | Yes | Yes | No: Not drawn yet. |
 | The user's answer to a design review | `message.reviewId` | Yes | Yes | No: Not drawn yet. |
 | A design review answer's picks and notes | `message.reviewResponse` | Yes | Yes | No: Not drawn yet. |
 | The user's answers to a card, each under its question | `message.answers` | Yes | No: Not drawn yet. | No: Not drawn yet. |
 | A summary that gives way to a longer reply | `message.givesWay` | No: Not drawn yet. | Yes | No: Not drawn yet. |
-| Why the runner sent its message | `message.wakeReason` | No: Not drawn yet. | No: Not drawn yet. | No: Not drawn yet. |
 | An edited message | `message.editOf` | No: Not drawn yet. | No: Not drawn yet. | No: Not drawn yet. |
 | Narration (a paraphrase of what the agent wrote) | `message.narration` | No: Not drawn yet. | No: Not drawn yet. | No: Not drawn yet. |
 | One reply's reply | `message.final` | No: Not drawn yet. | No: Not drawn yet. | No: Not drawn yet. |
@@ -199,3 +199,12 @@ pasted (`Desktop only for now.` for all three) is left out of this table.
 | Failed | `mark.Failed` | No: Not drawn yet. | No: Not drawn yet. | No: Not drawn yet. |
 | Done | `mark.Done` | No: Not drawn yet. | No: Not drawn yet. | No: Not drawn yet. |
 | Idle | `mark.Idle` | No: Not drawn yet. | No: Not drawn yet. | No: Not drawn yet. |
+
+## A move between the inbox, hibernating and the archive, as a divider with its icon (MoveIcon, reducer/event.rs)
+
+| What | Kind | iPhone | Android | Website |
+|---|---|---|---|---|
+| Hibernated (a moon) | `move.Hibernate` | Yes | Yes | No: Shown as a plain note, without the divider, icon or time. |
+| Woke up (a sun) | `move.Wake` | Yes | Yes | No: Shown as a plain note, without the divider, icon or time. |
+| Archived | `move.Archive` | Yes | Yes | No: Shown as a plain note, without the divider, icon or time. |
+| Back in the inbox | `move.Inbox` | Yes | Yes | No: Shown as a plain note, without the divider, icon or time. |

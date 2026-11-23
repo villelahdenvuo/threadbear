@@ -159,7 +159,7 @@ export type SyncConfig = {
 // lower one means its backend hasn't been deployed since this runner was:
 // said in runner.status, tb status and the log rather than stopping, since
 // the runner only adds to what it sends while the number stays the same.
-export const BACKEND_API_VERSION = 98;
+export const BACKEND_API_VERSION = 99;
 // From this one sync:removeThreads takes the runner's id and leaves a row
 // that's another runner's alone (a thread moved away), whatever the key.
 export const REMOVE_OWN_ROWS_API_VERSION = 92;
@@ -348,6 +348,12 @@ export const INDEX_ASKED_API_VERSION = 32;
 // phone's "6 min later · Mine the repo finished" divider. An older
 // backend's validator would turn the row down, so it goes without.
 export const WOKE_BY_API_VERSION = 33;
+// From this one a note row for a move between the inbox, hibernating and
+// the archive carries `move` ({ from, to, by }), and the runner's own
+// message carries its `wakeReason`, so the phones draw the Mac's move
+// divider and say why the runner woke the thread (Ville, 23 Nov 2026).
+// An older backend's validator would turn the row down, so it goes without.
+export const MOVE_NOTES_API_VERSION = 99;
 // From this one a message row whose text links button:<id> carries those
 // buttons' state (docs/protocol/events.md, "Reply buttons"), sent again when one is
 // pressed, and the phone can queue a `press` command. An older backend's
@@ -533,7 +539,9 @@ export type PhoneAsk = { action: string; why?: string; reply?: string; options?:
 // A text message, or one line for a tool call (role "tool", since backend
 // API 2): what the phone and the website show of a thread.
 export type WokeByDoc = { kind: string; description: string };
-export type MessageDoc = { threadId: string; seq: number; role: 'user' | 'assistant' | 'tool' | 'note'; text: string; origin?: string; toolKind?: string; summary?: true; plan?: true; planDecision?: 'go' | 'revise'; turn?: string; wokeBy?: WokeByDoc[]; buttons?: MessageButton[]; pictures?: number; answers?: AskAnswer[]; at: string; pagedAt?: number };
+export type MessageDoc = { threadId: string; seq: number; role: 'user' | 'assistant' | 'tool' | 'note'; text: string; origin?: string; toolKind?: string; summary?: true; plan?: true; planDecision?: 'go' | 'revise'; turn?: string; wokeBy?: WokeByDoc[]; buttons?: MessageButton[]; pictures?: number; answers?: AskAnswer[]; move?: MoveDoc; wakeReason?: string; at: string; pagedAt?: number };
+// Where a thread moved, on its note's row (API 99).
+export type MoveDoc = { from: string; to: string; by: string };
 // A reply button as a message row carries it (API 59): enough to draw it
 // and say where it goes, never its brief or message, which stay on the Mac.
 // target: the new thread's folder name, or the title of the thread it messages.
@@ -1242,7 +1250,8 @@ export function toMessageDoc(threadId: string, e: PersistedEvent, scrub: (text: 
     // A move between the inbox, hibernating and the archive too, so every
     // surface says when and who (docs/protocol/threads.md, "Moves in the transcript").
     const text = e.login || e.savedMessage || e.move ? scrub(e.text).trim().slice(0, NOTE_CHARS) : '';
-    return text ? { threadId, seq: e.seq, role: 'note', text, ...turn, at: e.ts } : undefined;
+    if (!text) return undefined;
+    return { threadId, seq: e.seq, role: 'note', text, ...turn, ...(e.move ? { move: { from: e.move.from, to: e.move.to, by: e.move.by } } : {}), at: e.ts };
   }
   if (e.type === 'plan.proposed') {
     // The plan in full (up to PLAN_CHARS), scrubbed as a reply is, so the
@@ -1263,6 +1272,8 @@ export function toMessageDoc(threadId: string, e: PersistedEvent, scrub: (text: 
   const text = note ? (cut ? `${cut}\n\n${note}` : note) : cut;
   const doc: MessageDoc = { threadId, seq: e.seq, role: e.type === 'user.message' ? 'user' : 'assistant', text, ...turn, at: e.ts };
   if (e.type === 'user.message' && e.origin) doc.origin = e.origin;
+  // What made the runner send it, for the phone's "14 h later · ..." divider.
+  if (e.type === 'user.message' && e.origin === 'runner' && e.wakeReason?.trim()) doc.wakeReason = cutSafely(scrub(e.wakeReason).trim(), 200);
   // How many it came with, so another Mac's relay never counts them from
   // the words: a typed "[Picture 2]" isn't one, and the cut above can take
   // the only marker (Codex's review, 18 Nov).
@@ -3964,6 +3975,7 @@ export class ConvexSync {
     if (v === undefined || v < ASKS_API_VERSION) messages = messages.map((m) => (m.summary ? (({ summary, ...rest }) => rest)(m) : m));
     if (v === undefined || v < TURNS_API_VERSION) messages = messages.map((m) => (m.turn ? (({ turn, ...rest }) => rest)(m) : m));
     if (v === undefined || v < WOKE_BY_API_VERSION) messages = messages.map((m) => (m.wokeBy ? (({ wokeBy, ...rest }) => rest)(m) : m));
+    if (v === undefined || v < MOVE_NOTES_API_VERSION) messages = messages.map((m) => (m.move || m.wakeReason ? (({ move, wakeReason, ...rest }) => rest)(m) : m));
     // Before API 72 a plan goes as an ordinary reply, still readable whole.
     if (v === undefined || v < PLAN_API_VERSION) messages = messages.map((m) => (m.plan ? (({ plan, ...rest }) => rest)(m) : m));
     // Before API 76 a plan's row says nothing of what became of it.

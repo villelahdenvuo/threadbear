@@ -346,6 +346,62 @@ struct LoginNoteView: View {
     }
 }
 
+/// A note as the thread draws it: the Mac's move divider when it's a move
+/// between the inbox, hibernating and the archive (backend API 99), else
+/// the quiet centred line.
+struct NoteView: View {
+    let message: PhoneMessage
+
+    var body: some View {
+        if let move = message.move {
+            MoveDividerView(move: move, text: message.text, at: message.at)
+        } else {
+            LoginNoteView(text: message.text)
+        }
+    }
+}
+
+/// "Hibernated by you until Monday 24 November, 9 am  Thu 20 Nov, 2:32 pm":
+/// a thin rule with an icon, the runner's words and when, so it's clear
+/// when the thread went away and what brought it back, as the Mac draws it
+/// (Ville picked the divider, 20 Nov).
+struct MoveDividerView: View {
+    let move: ThreadMove
+    let text: String
+    let at: Date
+
+    var body: some View {
+        HStack(spacing: 10) {
+            rule
+            Text("\(Image(systemName: symbol)) \(ThreadMove.words(text))  \(Text(ThreadMove.when(at)).foregroundStyle(.quaternary))")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .layoutPriority(1)
+            rule
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ThreadMove.words(text) + ", " + ThreadMove.fullWhen(at))
+    }
+
+    private var symbol: String {
+        switch move.icon {
+        case .hibernate: "moon"
+        case .wake: "sun.max"
+        case .archive: "archivebox"
+        case .inbox: "tray"
+        }
+    }
+
+    private var rule: some View {
+        Rectangle()
+            .fill(.quaternary)
+            .frame(height: 1 / UIScreen.main.scale)
+            .frame(minWidth: 16)
+    }
+}
+
 struct GapView: View {
     let gap: TurnGap
 
@@ -393,7 +449,7 @@ struct WorkedItems: View {
                 case let .tools(run): ToolRunView(items: run)
                 case let .worked(inner): WorkedView(worked: inner)
                 case let .gap(gap): GapView(gap: gap)
-                case let .note(note): LoginNoteView(text: note.text)
+                case let .note(note): NoteView(message: note)
                 }
             }
         }

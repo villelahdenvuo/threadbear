@@ -34,7 +34,10 @@ public enum Turns {
     public static func fold(_ messages: [PhoneMessage], busy: Bool) -> [ThreadItem] {
         let notes = messages.filter { $0.role == .note }
         guard !notes.isEmpty else { return foldTurns(messages, busy: busy) }
-        var out = foldTurns(messages.filter { $0.role != .note }, busy: busy)
+        // A "Woke up" note already says why a turn the runner started came,
+        // so that turn gets no divider, as on the Mac.
+        let wokeNotes = notes.filter { $0.text.hasPrefix("Woke up") }.map(\.seq)
+        var out = foldTurns(messages.filter { $0.role != .note }, busy: busy, wokeNotes: wokeNotes)
         for note in notes {
             let at = out.firstIndex { ($0.placedSeq ?? .min) > note.seq } ?? out.count
             out.insert(.note(note), at: at)
@@ -42,7 +45,7 @@ public enum Turns {
         return out
     }
 
-    static func foldTurns(_ messages: [PhoneMessage], busy: Bool) -> [ThreadItem] {
+    static func foldTurns(_ messages: [PhoneMessage], busy: Bool, wokeNotes: [Int] = []) -> [ThreadItem] {
         // A turn starts at a message from Mike, the phone, a schedule or
         // another agent; one the runner sent (a restart, a resume) joins the
         // turns before it, as on the Mac.
@@ -58,7 +61,7 @@ public enum Turns {
             if let starter { out.append(.message(starter)) }
             // The turn still going shows its work as it comes.
             if busy && i == turns.count - 1 {
-                out += shownWhole(body)
+                out += shownWhole(body, wokeNotes: wokeNotes)
                 continue
             }
             // A plan stays out of the fold wherever it is in the turn: it's
@@ -67,7 +70,7 @@ public enum Turns {
             let replyOnly = replies(body)
             let reply = replyOnly.isEmpty ? [] : Array(Set(replyOnly).union(body.indices.filter { body[$0].plan }))
             if reply.isEmpty {
-                out += shownWhole(body)
+                out += shownWhole(body, wokeNotes: wokeNotes)
                 continue
             }
             let folded = body.enumerated().filter { !reply.contains($0.offset) }.map(\.element)
@@ -81,7 +84,7 @@ public enum Turns {
             }
             // A wait between two of the replies gets its divider before
             // the reply after it.
-            let walls = dividers(body, shown: Set(reply))
+            let walls = dividers(body, shown: Set(reply), wokeNotes: wokeNotes)
             for r in reply.sorted() {
                 if let k = walls.keys.filter({ $0 <= r }).max(), let gap = walls[k], !out.contains(.gap(gap)) { out.append(.gap(gap)) }
                 out.append(.message(body[r]))
@@ -92,8 +95,8 @@ public enum Turns {
 
     /// A stretch shown as it is, every row, with a divider before each
     /// turn the agent woke up for.
-    static func shownWhole(_ body: [PhoneMessage]) -> [ThreadItem] {
-        let walls = dividers(body, shown: Set(body.indices))
+    static func shownWhole(_ body: [PhoneMessage], wokeNotes: [Int] = []) -> [ThreadItem] {
+        let walls = dividers(body, shown: Set(body.indices), wokeNotes: wokeNotes)
         var out: [ThreadItem] = []
         var start = 0
         for k in walls.keys.sorted() {
@@ -104,20 +107,32 @@ public enum Turns {
         return out + ThreadItem.group(Array(body[start...]))
     }
 
-    /// The wait before each turn in a stretch the agent started by itself
-    /// (no message starts it), by the index of its first row: from the row
-    /// before to that one. Rows from before API 26 have no turn, so there
-    /// are none.
-    static func waits(_ body: [PhoneMessage]) -> [Int: TurnGap] {
+    /// The wait before each turn in a stretch the agent or the runner
+    /// started by itself (no message of Mike's starts it), by the index of
+    /// its first row: from the row before to that one. A turn the runner's
+    /// message started gets it after that message, as the Mac draws it,
+    /// saying the message's `wakeReason`, unless a "Woke up" note came
+    /// between (`wokeNotes`, their seqs). Rows from before API 26 have no
+    /// turn, so there are none.
+    static func waits(_ body: [PhoneMessage], wokeNotes: [Int] = []) -> [Int: TurnGap] {
         var out: [Int: TurnGap] = [:]
         var i = 1
         while i < body.count {
-            let starts = body[i].turn != nil && body[i].turn != body[i - 1].turn && body[i].role != .user
-            guard starts else { i += 1; continue }
+            let newTurn = body[i].turn != nil && body[i].turn != body[i - 1].turn
+            let byRunner = body[i].role == .user && body[i].origin == "runner"
+            guard newTurn, body[i].role != .user || byRunner else { i += 1; continue }
             var end = i + 1
             while end < body.count, body[end].turn == body[i].turn, body[end].role != .user { end += 1 }
-            let woke = body[i..<end].lazy.compactMap(\.wokeBy).first ?? []
-            out[i] = TurnGap(seq: body[i].seq, from: body[i - 1].at, to: body[i].at, wokeBy: woke)
+            if byRunner {
+                let (from, to) = (body[i - 1].seq, body[i].seq)
+                let noted = wokeNotes.contains { $0 > from && $0 < to }
+                if !noted, i + 1 < end {
+                    out[i + 1] = TurnGap(seq: body[i + 1].seq, from: body[i - 1].at, to: body[i].at, runnerWake: body[i].wakeReason ?? "")
+                }
+            } else {
+                let woke = body[i..<end].lazy.compactMap(\.wokeBy).first ?? []
+                out[i] = TurnGap(seq: body[i].seq, from: body[i - 1].at, to: body[i].at, wokeBy: woke)
+            }
             i = end
         }
         return out
@@ -127,15 +142,15 @@ public enum Turns {
     /// dividers(in:)): only one with something shown above and below it.
     /// Waits with nothing shown between them are one divider, from the
     /// first one's start to the last one's end.
-    static func dividers(_ body: [PhoneMessage], shown: Set<Int>) -> [Int: TurnGap] {
-        let gaps = waits(body)
+    static func dividers(_ body: [PhoneMessage], shown: Set<Int>, wokeNotes: [Int] = []) -> [Int: TurnGap] {
+        let gaps = waits(body, wokeNotes: wokeNotes)
         var out: [Int: TurnGap] = [:]
         var shownBefore = false
         var waiting: (k: Int, gap: TurnGap)?
         for k in body.indices {
             if let gap = gaps[k], shownBefore {
                 if let earlier = waiting?.gap {
-                    waiting = (k, TurnGap(seq: gap.seq, from: earlier.from, to: gap.to, wokeBy: earlier.wokeBy + gap.wokeBy))
+                    waiting = (k, TurnGap(seq: gap.seq, from: earlier.from, to: gap.to, wokeBy: earlier.wokeBy + gap.wokeBy, runnerWake: gap.runnerWake ?? earlier.runnerWake))
                 } else {
                     waiting = (k, gap)
                 }

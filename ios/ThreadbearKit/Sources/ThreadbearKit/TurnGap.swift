@@ -24,17 +24,26 @@ public struct TurnGap: Hashable, Sendable {
     public var from: Date
     public var to: Date
     public var wokeBy: [WokeTask]
+    /// What the runner said woke it, when its own message started the turn
+    /// (`wakeReason`, backend API 99): "The connection came back". Empty:
+    /// "Threadbear woke it". Nil when no runner's message started it.
+    public var runnerWake: String?
 
-    public init(seq: Int, from: Date, to: Date, wokeBy: [WokeTask] = []) {
+    public init(seq: Int, from: Date, to: Date, wokeBy: [WokeTask] = [], runnerWake: String? = nil) {
         self.seq = seq
         self.from = from
         self.to = to
         self.wokeBy = wokeBy
+        self.runnerWake = runnerWake
     }
 
     public var label: String {
         let time = Self.later(max(0, to.timeIntervalSince(from)))
-        guard let cause = Self.cause(wokeBy) else { return time }
+        let runner = runnerWake.map { why -> String in
+            let why = why.trimmingCharacters(in: .whitespacesAndNewlines)
+            return why.isEmpty ? "Threadbear woke it" : why
+        }
+        guard let cause = runner ?? Self.cause(wokeBy) else { return time }
         return time + " · " + cause
     }
 

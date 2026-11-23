@@ -201,7 +201,7 @@ struct ThreadView: View {
                         case let .tools(run): ToolRunView(items: run)
                         case let .worked(worked): WorkedView(worked: worked)
                         case let .gap(gap): GapView(gap: gap)
-                        case let .note(note): LoginNoteView(text: note.text)
+                        case let .note(note): NoteView(message: note)
                         }
                     }
                     ForEach(pins.trailing) { PinnedPicture(image: $0) }
@@ -954,7 +954,7 @@ struct MessageView: View {
         // Drawn by the thread as an item of its own (ThreadItem.note); here
         // only if one is ever handed a message view.
         case .note:
-            LoginNoteView(text: message.text)
+            NoteView(message: message)
         }
     }
 

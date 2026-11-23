@@ -260,7 +260,11 @@ the thread if a sub-agent stalls, so an ask can't stay hidden for good.
   its rows' `turn` (backend API 26); rows from before that read as one turn. From
   backend API 33 the first row of a wake-up carries `wokeBy` (its
   `turn.started`'s), and the phone draws the same "6 min later · Mine the repo
-  finished" divider as the Mac, timed from the rows either side. The
+  finished" divider as the Mac, timed from the rows either side. From
+  backend API 99 the runner's own message row carries its `wakeReason`, and
+  a turn it started gets the divider too: "14 h later · The connection came
+  back", or "Threadbear woke it" with none, unless a "Woke up" note came
+  since the last turn ended, as on the Mac. The
   `end_turn` description tells the agent that in such a turn its summary
   takes the place of the last one, so it covers everything since Mike's
   message, and its work links can quote steps from those turns (Mike,

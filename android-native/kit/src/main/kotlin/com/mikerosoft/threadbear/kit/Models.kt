@@ -388,6 +388,10 @@ data class PhoneMessage(
     val at: Instant,
     /** A Plan first plan in full (backend API 72): drawn as a plan card, never folded into the turn's working. */
     val plan: Boolean = false,
+    /** On a note: the thread moving between the inbox, hibernating and the archive (backend API 99), drawn as the Mac's move divider. */
+    val move: ThreadMove? = null,
+    /** On the runner's own message: what made it send it ("The connection came back", backend API 99). */
+    val wakeReason: String? = null,
 ) {
     companion object {
         fun read(o: JsonObject): PhoneMessage = PhoneMessage(
@@ -411,6 +415,12 @@ data class PhoneMessage(
             },
             at = o.needDate("at"),
             plan = o.bool("plan") ?: false,
+            move = o.obj("move")?.let { m ->
+                val from = m.str("from")
+                val to = m.str("to")
+                if (from != null && to != null) ThreadMove(from, to, m.str("by") ?: "threadbear") else null
+            },
+            wakeReason = o.str("wakeReason"),
         )
     }
 }

@@ -76,6 +76,7 @@ function desktopKinds(): string[] {
     block: [...all(read('rich_block.rs'), /RichKind::\w+ => "([a-z]+)"/g), ...all(read('draft_block.rs'), /DraftKind::\w+ => "([a-z]+)"/g)],
     link: all(block(read('reply_links.rs'), /pub fn thread_link\(/, 'reply_links.rs'), /"(\w+)" =>/g),
     mark: variants(read('link_marks.rs'), 'LinkMark', 'link_marks.rs'),
+    move: variants(event, 'MoveIcon', 'reducer/event.rs'),
   };
   const out = new Set<string>();
   for (const [family, names] of Object.entries(kinds)) {

@@ -206,6 +206,10 @@ export type RelayRow = {
   pictures?: number;
   // The asks a user's message answered (API 89).
   answers?: AskAnswer[];
+  // A note's move between the inbox, hibernating and the archive, and why
+  // the runner sent its own message (API 99).
+  move?: { from: string; to: string; by: string };
+  wakeReason?: string;
   at: string;
 };
 export type RowButton = { id: string; title: string; kind: 'start' | 'send'; target?: string; pressedThreadId?: string; failed?: string };
@@ -397,6 +401,8 @@ export type RelayDeps = {
 };
 
 const RUNNING = new Set(['running', 'starting', 'waiting']);
+const PLACES = new Set(['inbox', 'hibernating', 'archived']);
+const MOVERS = new Set(['mike', 'agent', 'schedule', 'thread', 'threadbear']);
 const TOOL_NAMES: Record<string, string> = { command: 'Bash', read: 'Read', edit: 'Edit', write: 'Write', search: 'Grep', web: 'WebFetch', task: 'Task' };
 
 /**
@@ -440,7 +446,7 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
     if (r.role === 'user') {
       // Without the pictures read (an older backend), as that runner's words alone.
       const { text, images } = pictures ? messageWithPictures(threadId, r, pictures.get(r.seq)) : { text: r.text, images: [] };
-      out.push(env(base + 1, r, { type: 'user.message', text, images, ...(r.answers?.length ? { answers: r.answers.map((a) => ({ action: a.action, answer: a.answer })) } : {}), ...(r.origin === 'phone' || r.origin === 'runner' || r.origin === 'schedule' ? { origin: r.origin } : {}) }));
+      out.push(env(base + 1, r, { type: 'user.message', text, images, ...(r.answers?.length ? { answers: r.answers.map((a) => ({ action: a.action, answer: a.answer })) } : {}), ...(r.origin === 'phone' || r.origin === 'runner' || r.origin === 'schedule' ? { origin: r.origin } : {}), ...(r.origin === 'runner' && r.wakeReason ? { wakeReason: r.wakeReason } : {}) }));
     } else if (r.role === 'assistant' && r.plan) {
       // A Plan first plan: its card, as that runner's own Mac draws it. As a
       // reply it folded into the turn's work and nothing showed (12 Nov).
@@ -454,7 +460,9 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
       // That runner's thread moved to another login, or is waiting for
       // room: the app keeps these on show (is_login_note in
       // desktop/core/src/reducer/row.rs). Saved-message notices come over too.
-      out.push(env(base + 1, r, { type: 'system.note', text: r.text, login: true }));
+      // A move (API 99) is drawn as the Mac's move divider.
+      const move = r.move && PLACES.has(r.move.from) && PLACES.has(r.move.to) ? { from: r.move.from, to: r.move.to, by: MOVERS.has(r.move.by) ? r.move.by : 'threadbear' } : undefined;
+      out.push(env(base + 1, r, move ? { type: 'system.note', text: r.text, move } : { type: 'system.note', text: r.text, login: true }));
     } else if (r.role !== 'tool') {
       // A kind of row from a newer backend than this runner knows: left
       // out, not drawn as a tool call.
