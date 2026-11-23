@@ -153,6 +153,7 @@ fn restored_preview(open: &crate::pane_store::Open, from: &str) -> PanePreview {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct RowFlags {
     pub edited_open: bool,
+    pub all_pinned: bool,
     pub all_links: bool,
     pub all_runs: bool,
     pub all_commits: bool,
@@ -2808,11 +2809,22 @@ impl SidePane {
                 cx,
             ));
             if !folded {
-                for item in &sections.pinned {
+                let (shown, more) =
+                    HighlightSections::capped(&sections.pinned, core::PIN_LIMIT, flags.all_pinned);
+                for item in shown {
                     // A pinned file gets its preview too; a pinned link has none.
                     let thumb = self.file_thumb(item, thread, p, window, cx);
                     list =
                         list.child(self.highlight_row_with(item, thread, "pinned", thumb, p, cx));
+                }
+                if more > 0 {
+                    list = list.child(self.show_all_row(
+                        "pinned",
+                        sections.pinned.len(),
+                        thread.id.clone(),
+                        p,
+                        cx,
+                    ));
                 }
             }
         }
@@ -3072,6 +3084,7 @@ impl SidePane {
             .on_click(move |this, _window, cx| {
                 let flags = this.flags.entry(thread_id.clone()).or_default();
                 match which {
+                    "pinned" => flags.all_pinned = true,
                     "links" => flags.all_links = true,
                     "runs" => flags.all_runs = true,
                     "commits" => flags.all_commits = true,
@@ -3796,11 +3809,17 @@ impl SidePane {
             json!({ "title": h.title, "lead": if is_commit { h.sha.clone() } else { None }, "trailing": how, "note": h.note, "detail": detail, "symbol": core::highlight_symbol(h) })
         };
         if !sections.pinned.is_empty() {
+            let (shown, more) =
+                HighlightSections::capped(&sections.pinned, core::PIN_LIMIT, flags.all_pinned);
+            let mut rows: Vec<Value> = shown.iter().map(&item_row).collect();
+            if more > 0 {
+                rows.push(json!({ "title": format!("Show all {}", sections.pinned.len()), "symbol": "ellipsis" }));
+            }
             add(
                 fold::PINNED,
                 "Pinned",
                 sections.pinned.len(),
-                sections.pinned.iter().map(&item_row).collect(),
+                rows,
                 &mut out,
             );
         }
@@ -3970,6 +3989,7 @@ fn highlight_command(
         side.update(cx, |pane, cx| {
             let flags = pane.flags.entry(thread.id.clone()).or_default();
             match which {
+                "pinned" => flags.all_pinned = true,
                 "links" => flags.all_links = true,
                 "runs" => flags.all_runs = true,
                 "commits" => flags.all_commits = true,

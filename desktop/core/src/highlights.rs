@@ -369,6 +369,9 @@ pub const COMMIT_LIMIT: usize = 5;
 pub const LINK_LIMIT: usize = 10;
 pub const RUN_LIMIT: usize = 5;
 pub const SUBAGENT_LIMIT: usize = 5;
+/// Pins come newest first and are never dropped, so a long thread's list
+/// grew past the screen (Ville, 23 Nov 2026); the rest wait behind Show all.
+pub const PIN_LIMIT: usize = 5;
 
 /// What each folding heading is remembered as (`HighlightFold`). A fold holds
 /// for every thread, so Sub-agents stays out of the way once Mike has put it
@@ -2369,6 +2372,28 @@ mod tests {
         assert_eq!(
             ThreadHighlights::decode(&json!({})),
             ThreadHighlights::default()
+        );
+    }
+
+    #[test]
+    fn many_pins_show_the_newest_and_keep_the_rest_behind_show_all() {
+        let pins: Vec<_> = (1..=8)
+            .rev()
+            .map(|n| json!({"id": format!("file:/w/p{n}.png"), "kind": "file", "title": format!("p{n}.png"), "path": format!("/w/p{n}.png"), "how": "pinned", "seq": n, "lastSeq": n, "at": "2026-11-23T08:00:00Z"}))
+            .collect();
+        let sections =
+            HighlightSections::build(&ThreadHighlights::decode(&json!({ "highlights": pins })));
+        assert_eq!(sections.pinned.len(), 8);
+        let (shown, more) = HighlightSections::capped(&sections.pinned, PIN_LIMIT, false);
+        let titles: Vec<_> = shown.iter().map(|h| h.title.as_str()).collect();
+        assert_eq!(titles, ["p8.png", "p7.png", "p6.png", "p5.png", "p4.png"]);
+        assert_eq!(more, 3);
+        // None is lost: Show all brings back every pin.
+        assert_eq!(
+            HighlightSections::capped(&sections.pinned, PIN_LIMIT, true)
+                .0
+                .len(),
+            8
         );
     }
 

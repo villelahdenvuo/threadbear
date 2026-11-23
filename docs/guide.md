@@ -1081,7 +1081,9 @@ open the pin in the panel beside the thread: straight away if you're
 looking at that thread, or else when you next open it. Files it
 writes and links it mentions show up by themselves, so pins are for the
 few things that matter most. To have something pinned, ask the thread
-("pin the mockup for me").
+("pin the mockup for me"). Pinned shows the five newest pins; the
+others wait behind Show all, as in Links and Changes. Pinning the same
+file or link again moves it to the top, not into a second row.
 
 ## Projects
 <!-- slug: projects -->
