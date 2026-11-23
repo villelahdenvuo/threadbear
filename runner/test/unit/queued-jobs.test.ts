@@ -54,3 +54,13 @@ test("a thread's own key reports only its own jobs", () => {
   assert.deepEqual(gate.check(mine.id, 'threads.queued', p), p);
   assert.throws(() => gate.check(mine.id, 'threads.queued', { ...p, threadId: other.id }), (e: { code?: number }) => e.code === ErrorCode.notAllowed);
 });
+
+test("a thread on Auto sets a PR's auto-fix wand for itself only", () => {
+  const h = makeHarness();
+  const mine = h.runner.create({ text: 'Mine', accountId: 'claude-3', permissionMode: 'auto' }).thread;
+  const other = h.runner.create({ text: 'Other', accountId: 'claude-3', permissionMode: 'auto' }).thread;
+  const gate = new CallerGate({ runner: h.runner });
+  const p = { threadId: mine.id, urls: ['https://github.com/o/r/pull/1'], on: true };
+  assert.deepEqual(gate.check(mine.id, 'prWatch.set', p), p);
+  assert.throws(() => gate.check(mine.id, 'prWatch.set', { ...p, threadId: other.id }), (e: { code?: number }) => e.code === ErrorCode.notAllowed);
+});

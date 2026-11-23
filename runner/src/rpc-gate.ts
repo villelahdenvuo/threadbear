@@ -213,6 +213,12 @@ export class CallerGate {
         if (id && id !== threadId && above(this.targetAccess(id), caller)) throw needs(`changing the projects of ${this.title(id)}`, 'join_project');
         return { ...p, by: 'agent' };
       }
+      // A PR's auto-fix wand, for this thread only: the watch messages the thread that
+      // set it, so turning it on reaches no thread but the caller's own (Ville's OK, 23 Nov).
+      case 'prWatch.set': {
+        if (str(p, 'threadId') !== threadId) throw needs("setting a PR's auto-fix wand for another thread");
+        return p;
+      }
       case 'threads.showPanel': {
         if (str(p, 'threadId') !== threadId) throw needs("opening another thread's panel", 'show_panel');
         return p;
