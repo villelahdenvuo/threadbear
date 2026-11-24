@@ -87,17 +87,18 @@ public enum PendingApproval: Codable, Sendable, Hashable {
         case nil, "approval":
             // Options this build doesn't know are dropped rather than
             // failing the whole inbox.
-            let raw = try c.decodeIfPresent([String].self, forKey: .options) ?? ["allow", "deny"]
-            self = .approval(
-                id: id,
-                name: try c.decodeIfPresent(String.self, forKey: .name) ?? "",
-                title: try c.decodeIfPresent(String.self, forKey: .title) ?? "Permission",
-                options: raw.compactMap(ApprovalOption.init(rawValue:)),
-                inputSummary: try c.decodeIfPresent(String.self, forKey: .inputSummary),
-                // Convex numbers are float64; one that isn't a whole seq pairs with nothing.
-                planSeq: (try? c.decodeIfPresent(Double.self, forKey: .planSeq)).flatMap { $0 }.flatMap { $0.wholeCount() },
-                reason: (try? c.decodeIfPresent(String.self, forKey: .reason)).flatMap { $0 }
-            )
+            // Each part in its own let: as one expression, Xcode 26 gave up
+            // type-checking it.
+            let raw: [String] = try c.decodeIfPresent([String].self, forKey: .options) ?? ["allow", "deny"]
+            let name: String = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+            let title: String = try c.decodeIfPresent(String.self, forKey: .title) ?? "Permission"
+            let options: [ApprovalOption] = raw.compactMap(ApprovalOption.init(rawValue:))
+            let inputSummary: String? = try c.decodeIfPresent(String.self, forKey: .inputSummary)
+            // Convex numbers are float64; one that isn't a whole seq pairs with nothing.
+            let planDouble: Double? = (try? c.decodeIfPresent(Double.self, forKey: .planSeq)) ?? nil
+            let planSeq: Int? = planDouble.flatMap { $0.wholeCount() }
+            let reason: String? = (try? c.decodeIfPresent(String.self, forKey: .reason)) ?? nil
+            self = .approval(id: id, name: name, title: title, options: options, inputSummary: inputSummary, planSeq: planSeq, reason: reason)
         case let kind?:
             self = .other(id: id, kind: kind)
         }
