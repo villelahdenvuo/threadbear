@@ -527,6 +527,14 @@ pub struct ShellBlock {
     pub command: String,
 }
 
+/// The command in a message that starts with `!`, as Claude Code's bash mode
+/// takes one: it runs in the thread's Terminal and never goes to the agent.
+/// None for any other message, or a lone `!`.
+pub fn bang_command(text: &str) -> Option<&str> {
+    let command = text.trim_start().strip_prefix('!')?.trim();
+    (!command.is_empty()).then_some(command)
+}
+
 /// Past this it's a script, not a command to hand someone.
 pub const MAX_SOURCE: usize = 8_000;
 
@@ -1056,6 +1064,16 @@ fn without_line_number(path: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_message_starting_with_a_bang_is_a_command() {
+        assert_eq!(bang_command("!ls -la"), Some("ls -la"));
+        assert_eq!(bang_command("  ! git status \n"), Some("git status"));
+        assert_eq!(bang_command("!"), None);
+        assert_eq!(bang_command("!  "), None);
+        assert_eq!(bang_command("run !ls"), None);
+        assert_eq!(bang_command("ls"), None);
+    }
 
     fn thread(id: &str, cwd: &str) -> ThreadSummary {
         ThreadSummary {

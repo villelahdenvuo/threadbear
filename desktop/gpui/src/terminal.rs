@@ -318,10 +318,12 @@ pub(crate) enum PutOutcome {
 /// A shell block's play icon (`putInTerminal`): the command at its thread's
 /// prompt, checked again here against the thread it came from, with the panel
 /// brought up for it. None when it can't go there (or one is on its way).
+/// `run` presses Return too, for a `!` command typed in the box.
 pub(crate) fn put_in_terminal(
     app: &mut Threadbear,
     block: ShellBlock,
     block_thread: &str,
+    run: bool,
     window: &mut Window,
     cx: &mut Context<Threadbear>,
 ) -> Option<Task<Option<PutOutcome>>> {
@@ -340,7 +342,7 @@ pub(crate) fn put_in_terminal(
     let terminals = terminals(cx)?;
     Some(terminals.update(cx, |t, cx| {
         t.set_target(target.clone(), cx);
-        t.put(block, target, window, cx)
+        t.put(block, target, run, window, cx)
     }))
 }
 
@@ -493,12 +495,14 @@ impl Terminals {
     }
 
     /// Types `block` at the target's prompt, starting a shell if it needs one,
-    /// and gives it the keyboard (`Terminals.put`). Never presses Return: the
-    /// command came out of a reply, so a person gets to read it first.
+    /// and gives it the keyboard (`Terminals.put`). Presses Return only with
+    /// `run`, for a `!` command Mike typed himself: one out of a reply waits
+    /// there, so a person gets to read it first.
     fn put(
         &mut self,
         block: ShellBlock,
         target: Target,
+        run: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Task<Option<PutOutcome>> {
@@ -524,6 +528,9 @@ impl Terminals {
                     let step = s.put_step(&block);
                     if step == Step::Type {
                         s.put(&block.command, cx);
+                    }
+                    if run && matches!(step, Step::Type | Step::AlreadyThere) {
+                        s.press_return(cx);
                     }
                     step
                 });
@@ -1086,6 +1093,12 @@ impl Session {
         self.scroll_to_bottom();
         self.write(rules::paste_bytes(command, true));
         self.set_line(Line::Put(command.to_owned()), cx);
+    }
+
+    /// Runs what's at the prompt, as Return pressed there would.
+    fn press_return(&mut self, cx: &mut Context<Self>) {
+        self.write(b"\r".to_vec());
+        self.set_line(Line::Empty, cx);
     }
 
     fn set_line(&mut self, line: Line, cx: &mut Context<Self>) {

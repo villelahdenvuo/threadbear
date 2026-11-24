@@ -1008,6 +1008,13 @@ in a panel of its own, as the Terminal shows the main panel's thread's
 shell: open the thread in the main panel to use it. It's on the Mac app only.
 A block with control or invisible characters in it has no play icon.
 
+A message that starts with `!` is a command for the Terminal, not the
+agent. Type `!npm test` in the box and press Return: the Terminal opens,
+the command runs in the thread's shell, and the keyboard goes there. The
+agent never sees it. If the shell is busy, or another command waits there
+for Return, the command goes back in the box and a bar says why. It works
+in the same places the play icon does.
+
 A link in the Terminal (one a program prints, or a path you click) opens
 the way a link in a reply does: a web page in your browser, a document in
 its app, and anything that would run something, or start another app,

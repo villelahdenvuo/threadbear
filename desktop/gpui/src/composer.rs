@@ -838,6 +838,9 @@ impl Composer {
         if self.editing.is_some() {
             return self.send_edit(cx);
         }
+        if self.run_bang_command(window, cx) {
+            return;
+        }
         let (draft_text, images) = self.draft(cx);
         // Pictures from the asks' boxes come first, numbered as the answers
         // say, then the box's own chips, whose markers go after them.
@@ -891,6 +894,64 @@ impl Composer {
             crate::draft_boxes::note_edits_sent(&thread, cx);
         }
         cx.notify();
+    }
+
+    /// A message that starts with `!` (and has no pictures, and isn't an
+    /// answer to an open card) runs as a command in the thread's Terminal,
+    /// which opens for it, and never goes to the agent. The box empties at
+    /// once; the words come back with a note when the shell can't take them.
+    /// False when the message isn't one, so it sends as usual.
+    fn run_bang_command(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let (text, images) = self.draft(cx);
+        let Some(command) = threadbear_core::terminal::bang_command(&text) else {
+            return false;
+        };
+        if !images.is_empty() || self.open_card(cx).is_some_and(|c| !c.is_done()) {
+            return false;
+        }
+        let (Some(thread), Some(app)) = (self.thread_id.clone(), self.app.upgrade()) else {
+            return false;
+        };
+        let block = threadbear_core::terminal::ShellBlock {
+            command: command.to_owned(),
+        };
+        let task = app.update(cx, |a, cx| {
+            crate::terminal::put_in_terminal(a, block, &thread, true, window, cx)
+        });
+        let Some(task) = task else {
+            app.update(cx, |a, cx| {
+                a.show_error(
+                    "A ! command runs in this Mac's Terminal, which this thread can't use here. Open it in the main panel, on this Mac."
+                        .into(),
+                    cx,
+                )
+            });
+            return true;
+        };
+        let typed = self.input.read(cx).value().to_string();
+        self.input.update(cx, |s, cx| s.set_value("", window, cx));
+        cx.spawn_in(window, async move |this, cx| {
+            let why = match task.await {
+                Some(crate::terminal::PutOutcome::Typed | crate::terminal::PutOutcome::AlreadyThere) => {
+                    return
+                }
+                Some(crate::terminal::PutOutcome::Occupied) => {
+                    "Another command is waiting for Return in the Terminal, so this one is back in the box."
+                }
+                _ => "The Terminal is busy, so the command is back in the box.",
+            };
+            this.update_in(cx, |this, window, cx| {
+                if this.input.read(cx).value().is_empty() {
+                    this.input.update(cx, |s, cx| s.set_value(typed, window, cx));
+                }
+                if let Some(app) = this.app.upgrade() {
+                    app.update(cx, |a, cx| a.show_error(why.into(), cx));
+                }
+            })
+            .ok();
+        })
+        .detach();
+        true
     }
 
     /// `AppModel.send(threadId: nil)`: the new-thread page's box. The words

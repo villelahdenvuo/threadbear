@@ -225,7 +225,7 @@ pub(crate) fn put(command: &str, thread: &str, window: &mut Window, cx: &mut App
         command: command.to_owned(),
     };
     let Some(task) = app.update(cx, |a, cx| {
-        crate::terminal::put_in_terminal(a, block, thread, window, cx)
+        crate::terminal::put_in_terminal(a, block, thread, false, window, cx)
     }) else {
         return;
     };

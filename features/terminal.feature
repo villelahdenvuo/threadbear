@@ -235,6 +235,18 @@ Feature: The Terminal
     When I press Return in the Terminal
     Then the Terminal shows the line "from-the-reply"
 
+  # Claude Code's bash mode: a message that starts with ! is a command Mike
+  # typed himself, so it runs at once and never goes to the agent.
+  @terminal.putcommand @windows-pending @swift-pending
+  Scenario: A message that starts with ! runs in the Terminal
+    Given the thread "Rename the Settings tabs" works in a folder of its own
+    When I open the thread "Rename the Settings tabs"
+    And I type "!echo from-the-box" in the composer
+    And I press Return
+    Then the Terminal shows the line "from-the-box"
+    And the Terminal has the keyboard
+    And the composer is empty
+
   # Not typed in place of the first: clearing that would mean sending keys
   # (^U) a shell can have bound to anything, Return included.
   @terminal.putcommand @windows-pending
