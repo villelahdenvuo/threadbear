@@ -484,6 +484,16 @@ impl HighlightSections {
         }
     }
 
+    /// The row under a long group: "Show all 9" while it's cut short,
+    /// "Show fewer" once it shows every one, to put it back.
+    pub fn show_all_label(count: usize, open: bool) -> String {
+        if open {
+            "Show fewer".to_owned()
+        } else {
+            format!("Show all {count}")
+        }
+    }
+
     /// The brief's bullets: the librarian writes "- " lines (Mike found a
     /// paragraph too long to glance at, 28 Oct). An older paragraph brief
     /// comes back as one point.
