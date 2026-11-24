@@ -88,6 +88,16 @@ test('the Android signing key only meets a job that runs no actions, no checkout
     for (const [name, body] of jobsOf(text)) if (/secrets\.ANDROID_KEYSTORE/.test(body)) keyed.push(`${file}:${name}`);
   }
   assert.deepEqual(keyed, ['android.yml:release'], 'only the release job names the key or its password');
+  // A fork's own key (fork-release, started by hand) is held to the same rules.
+  const forkKeyed: string[] = [];
+  for (const [file, text] of workflows()) {
+    for (const [name, body] of jobsOf(text)) if (/secrets\.FORK_ANDROID_KEYSTORE/.test(body)) forkKeyed.push(`${file}:${name}`);
+  }
+  assert.deepEqual(forkKeyed, ['android.yml:fork-release'], "only fork-release names a fork's key");
+  const forkRelease = jobsOf(fs.readFileSync(path.join(workflowsDir, 'android.yml'), 'utf8')).get('fork-release')!;
+  assert.deepEqual(usesOf(forkRelease), [], 'the fork signing job runs no actions at all');
+  assert.doesNotMatch(forkRelease, /checkout|gradlew|sdkmanager|setup-java/, 'the fork signing job runs no repo code');
+  assert.match(forkRelease, /^ {4}if: github\.repository != 'mikecann\/threadbear'/m);
   const jobs = jobsOf(fs.readFileSync(path.join(workflowsDir, 'android.yml'), 'utf8'));
   const release = jobs.get('release')!;
   assert.deepEqual(usesOf(release), [], 'the signing job runs no actions at all');
