@@ -29,6 +29,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -184,6 +186,24 @@ fun SettingsScreen(back: () -> Unit, runnerOrder: () -> Unit) {
                             )
                         }
                     }
+                }
+            }
+            // For a phone push can't reach (a fork's own build): Android wakes the
+            // app about every 15 minutes to look (ThreadCheckJob).
+            var checking by remember { mutableStateOf(com.mikerosoft.threadbear.android.ThreadChecks.on(context)) }
+            Group("Check for threads", footer = "Android wakes the app about every 15 minutes to look for threads that need you, and less often while the phone is idle. For a phone notifications don't reach. Turn off battery optimisation for Threadbear to keep it on time.") {
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        checking = !checking
+                        com.mikerosoft.threadbear.android.ThreadChecks.set(context, checking)
+                    }.heightIn(min = 48.dp).padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Check every 15 minutes", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = checking, onCheckedChange = null,
+                        colors = SwitchDefaults.colors(checkedTrackColor = LocalSignals.current.accent),
+                    )
                 }
             }
             // The app's own version, and a newer release when there is one (Updates).

@@ -11,5 +11,6 @@ class ThreadbearApplication : Application() {
         super.onCreate()
         Push.start(this)
         model = AppModel(this, MainScope())
+        ThreadChecks.schedule(this)
     }
 }

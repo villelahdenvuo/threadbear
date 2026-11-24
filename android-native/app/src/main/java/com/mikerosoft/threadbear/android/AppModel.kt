@@ -133,6 +133,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         val b = PhoneBackend(t, pairing.token)
         _backend.value = b
         askIdentity(b)
+        ThreadChecks.schedule(appContext)
     }
 
     /**
@@ -420,6 +421,8 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         // Another server (or none): its notifications come down and any being
         // opened are dropped, before anything else of the new pairing's.
         Push.pairingChanged(appContext, forget = forget)
+        if (forget) ThreadChecks.forget(appContext)
+        ThreadChecks.schedule(appContext)
         pairingEpoch++
         _pushToken.value = null
         shell.pushToken.value = null

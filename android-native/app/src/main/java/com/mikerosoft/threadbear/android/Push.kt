@@ -164,6 +164,25 @@ object Push {
             generation to PushKeyStore(context).load()
         }
         val opened = if (sealed != null && key != null) PushSeal.open(sealed, key) else null
+        post(context, threadId, opened?.title ?: "Threadbear", opened?.body ?: "A thread needs you", opening)
+    }
+
+    /**
+     * The 15-minute check's own (ThreadCheckJob): the thread's title and
+     * preview, read from the inbox, so no key. One already showing for the
+     * thread (a push got there first) is left as it is.
+     */
+    fun showPlain(context: Context, threadId: String, title: String, body: String) {
+        if (!permitted(context)) return
+        val opening = synchronized(lock) {
+            if (quiet || !PairingStore(context).paired()) return
+            generation
+        }
+        val showing = context.getSystemService(NotificationManager::class.java).activeNotifications.any { it.tag == threadId }
+        if (!showing) post(context, threadId, title, body.ifBlank { "A thread needs you" }, opening)
+    }
+
+    private fun post(context: Context, threadId: String, title: String, body: String, opening: Int) {
         val open = Intent(context, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra("threadId", threadId)
@@ -174,9 +193,9 @@ object Push {
         val tap = PendingIntent.getActivity(context, threadId.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(opened?.title ?: "Threadbear")
-            .setContentText(opened?.body ?: "A thread needs you")
-            .setStyle(NotificationCompat.BigTextStyle().bigText(opened?.body ?: "A thread needs you"))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(tap)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

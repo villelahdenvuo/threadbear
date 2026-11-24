@@ -16,6 +16,8 @@
     </queries>
     <!-- Android 13+: asked for once paired, as the iPhone asks (MainActivity). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Settings > Check every 15 minutes keeps its booking after a restart (ThreadCheckJob). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".ThreadbearApplication"
@@ -49,6 +51,10 @@
             <!-- No threadbear://pair links: any app can claim the scheme, so the
                  Mac's pairing code is read by the app's own scanner (Daybreak 127). -->
         </activity>
+        <service
+            android:name=".ThreadCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <!-- The push transport and the scanner are each flavour's own
              (src/github, src/fdroid manifests). -->
     </application>
