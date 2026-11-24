@@ -310,7 +310,8 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
-      actions: read
+      # Fetching the build's artifact, then deleting it.
+      actions: write
     env:
       GH_REPO: ${{ github.repository }}
       TAG: release/${{ needs.fork-apk.outputs.day }}
@@ -352,3 +353,14 @@ jobs:
       - name: Never leave the key on the runner
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
+
+      # The unsigned APK only passes between the two jobs: gone once signed
+      # (or not), so the release is the only copy kept.
+      - name: Delete this run's artifacts
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[].id'); do
+            gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$id"
+          done
