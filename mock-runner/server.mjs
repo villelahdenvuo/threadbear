@@ -2042,7 +2042,8 @@ async function dispatch(client, method, p) {
     // A thread whose agent ended its turn waiting on its own work, as
     // end_turn's waitFor leaves one: hibernating a day at most, waiting on
     // the thread called `on`, or for the app to restart onto what it landed
-    // (`app: true`, as wait_for_app_restart does).
+    // (`app: true`, as wait_for_app_restart does), or for its GitHub
+    // workflow runs (`runs: true`, as end_turn's waitForRuns does).
     case 'mock.waitOn': {
       const entry = [...threads.values()].find((t) => t.summary.title === p.title);
       if (!entry) throw rpcError(-32602, `No thread called "${p.title}"`);
@@ -2051,6 +2052,7 @@ async function dispatch(client, method, p) {
       s.needsYou = false;
       s.snoozedUntil = new Date(Date.now() + 86_400_000).toISOString();
       if (p.app) s.awaitingAppRestart = true;
+      else if (p.runs) s.awaitingRuns = true;
       else {
         const other = [...threads.values()].find((t) => t.summary.title === p.on);
         if (!other) throw rpcError(-32602, `No thread called "${p.on}"`);
@@ -4599,7 +4601,7 @@ The new hero is shorter, and every page now leads with what the app does.
       ],
       edited: ['ios/App/Info.plist', 'ios/fastlane/Fastfile', 'ios/RELEASE_NOTES.md']
         .map((rel) => `/Users/alex/code/app/${rel}`),
-      // GitHub Actions runs its pushes set off (experiment ciRuns).
+      // GitHub Actions runs its pushes set off.
       runs: [
         { id: 'run:903', workflow: 'TestFlight upload', status: 'running', url: 'https://github.com/alex-example/app/actions/runs/903', sha: '9f3c2e1', branch: 'beta-2', event: 'push', at: new Date(Date.now() - 90_000).toISOString() },
         { id: 'run:902', workflow: 'Lint', status: 'queued', url: 'https://github.com/alex-example/app/actions/runs/902', sha: '9f3c2e1', branch: 'beta-2', event: 'push', at: new Date(Date.now() - 95_000).toISOString() },

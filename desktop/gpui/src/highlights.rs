@@ -2898,7 +2898,7 @@ impl SidePane {
                 }
             }
         }
-        // GitHub Actions runs its pushes set off (experiment ciRuns), between
+        // GitHub Actions runs its pushes set off, between
         // the links and the commits behind them (Ville picked this, 12 Nov).
         if !sections.runs.is_empty() {
             let folded = self.is_folded(fold::RUNS);

@@ -857,7 +857,8 @@ but it does not keep those jobs alive. To let a job finish, leave its thread
 awake; the agent can end its reply while the job carries on. An agent that
 only needs to wait for something (a merge, CI, another thread) is stopped
 from doing it with a background job, and uses a scheduled check instead,
-so its thread can still hibernate.
+so its thread can still hibernate. For GitHub Actions it needs no check of
+its own (see below).
 
 You can also ask a thread to do it to itself ("hibernate this until
 Thursday", "archive this when you're done"). It finishes its reply first,
@@ -879,7 +880,15 @@ for more than a time. A thread can also hibernate until the runner
 updates to a new release (a restart on the same one leaves it asleep).
 One that has landed a change to the app and is waiting to check it
 hibernates by itself when it's done for now, and wakes once the app has
-restarted onto a build with the change. One waiting on a job that will message it does the
+restarted onto a build with the change. A thread that waits on GitHub
+Actions workflow runs hibernates until they finish, then wakes with one
+line for each run: its workflow, whether it passed, failed or was
+cancelled, and a link. It can wait on the runs its own pushes, dispatches
+and re-runs set off, or name a run it didn't start, in any repo your `gh`
+can see. It sits under Running meanwhile, and its row says Until its
+GitHub workflows finish. If they're still going when Threadbear stops
+watching after 2 hours, it wakes with a note to check them itself. This
+needs no schedule, so there's no card to allow. One waiting on a job that will message it does the
 same until the message comes. Either way it has a time it comes back
 anyway, a day unless it says otherwise.
 
@@ -1080,9 +1089,12 @@ From the top, and only when there's something to show:
   review, the thread snoozes for a day. A thread on Auto can turn the wand
   on for its own PRs.
 - **Links**: web pages it opened or mentioned.
-- **Runs**: with the GitHub Actions runs experiment on (see
-  [Experiments](#experiments)), the workflow runs its pushes, dispatches and re-runs set off,
-  each queued, running, passed or failed. Click one to open it on GitHub.
+- **Runs**: the GitHub Actions workflow runs its pushes, dispatches and
+  re-runs set off, each queued, running, passed or failed. Click one to
+  open it on GitHub. Threadbear asks your own `gh` login about them, every
+  15 seconds to 2 minutes while one is queued or running, for 2 hours at
+  most. A thread waiting on them can hibernate until they finish (see
+  [Hibernate and archive](#hibernate-and-archive)).
 - **Changes**: its commits, and a line such as "4 files edited" that
   opens to the code it changed.
 

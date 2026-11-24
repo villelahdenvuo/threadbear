@@ -141,7 +141,7 @@ pub struct ThreadHighlights {
     pub highlights: Vec<Highlight>,
     pub edited: Vec<String>,
     pub brief: Option<String>,
-    /// GitHub Actions runs it set off, newest first (experiment ciRuns).
+    /// GitHub Actions runs it set off, newest first.
     pub runs: Vec<CiRun>,
 }
 
@@ -403,7 +403,7 @@ pub struct HighlightSections {
     pub links: Vec<Highlight>,
     /// Pull requests, after `split_prs`.
     pub prs: Vec<Highlight>,
-    /// GitHub Actions runs, newest first (experiment ciRuns).
+    /// GitHub Actions runs, newest first.
     pub runs: Vec<CiRun>,
     pub commits: Vec<Highlight>,
     /// Edited files not already listed as a pin or a file.

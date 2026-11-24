@@ -6,6 +6,7 @@
 import { sentByAgent, type Ask, type AskLink, type NeedsWho, type PersistedEvent } from './protocol.ts';
 import { hasLineBreak, replaceLinks } from './linear-text.ts';
 import { cutSafely, safeEnd } from './safe-cut.ts';
+import { MAX_NAMED_RUNS, namedRun, type NamedRun, type RunsWait } from './ci-runs.ts';
 
 export type Needs = { needs: NeedsWho; asks?: Ask[]; next?: string[] };
 
@@ -250,6 +251,24 @@ export function waitForFromTool(input: unknown): WaitFor[] | undefined {
     if (out.length === MAX_WAIT_FOR) break;
   }
   return out.length && needsFromTool(input)?.needs === 'nothing' ? out : undefined;
+}
+
+// end_turn's waitForRuns: hibernates until GitHub workflow runs finish
+// (runner/ci-runs.ts, waitRuns). true for the thread's own runs, or a list
+// of runs by link, id or { run, repo }. Like waitFor, only with needs
+// "nothing"; entries it can't read are dropped (the tool refused them first).
+export function runsFromTool(input: unknown): RunsWait | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const w = (input as Record<string, unknown>).waitForRuns;
+  if (needsFromTool(input)?.needs !== 'nothing') return undefined;
+  if (w === true) return { mine: true };
+  if (!Array.isArray(w)) return undefined;
+  const runs: NamedRun[] = [];
+  for (const x of w.slice(0, MAX_NAMED_RUNS)) {
+    const n = namedRun(x);
+    if (typeof n !== 'string' && !runs.some((y) => y.id === n.id && y.repo === n.repo)) runs.push(n);
+  }
+  return runs.length ? { runs } : undefined;
 }
 
 // end_turn's byline: a few words for the row of a thread Mike didn't start.
@@ -538,7 +557,7 @@ const END_TURN_BACKGROUND =
 // Hibernating itself, in every form's description (snoozeFromTool).
 const END_TURN_SNOOZE =
   END_TURN_BACKGROUND +
-  'snooze hibernates this thread once the turn is over, with needs "nothing" only, until a time ("2h", "1d", "tomorrow", an ISO time with its offset, "restart", or "release" for a new release) or words saying when ("when the phone arrives"). Use it when the user asks for this thread to be snoozed or hibernated, or when the rest waits on a message (one wakes it), until it should have come; it only brings the thread back, so a step of your own later is a schedule_message, except words for something to happen ("until X ships"), which wake you with a turn to check. waitFor names threads it waits on, which wake it when they finish. ';
+  'snooze hibernates this thread once the turn is over, with needs "nothing" only, until a time ("2h", "1d", "tomorrow", an ISO time with its offset, "restart", or "release" for a new release) or words saying when ("when the phone arrives"). Use it when the user asks for this thread to be snoozed or hibernated, or when the rest waits on a message (one wakes it), until it should have come; it only brings the thread back, so a step of your own later is a schedule_message, except words for something to happen ("until X ships"), which wake you with a turn to check. waitFor names threads it waits on, which wake it when they finish.';
 
 // Handing a step over, in every form's description. This used to say to offer
 // "Can you do it?" when the agent could plausibly do the step itself, which told
@@ -953,8 +972,8 @@ export function strayAskProblem(fields: string[], oneReply: boolean): string {
 
 export function endTurnMisfit(problem: string, oneReply: boolean): string {
   const shape = oneReply
-    ? '{ headline?, needs?, asks?: { question, options?: { label, does? }[], suggested?, links? }[], next?, archive?, snooze?, waitFor? }, then write your reply after it, as ordinary text: that reply is the only text the user sees from the turn.'
-    : '{ needs?, summary?: string[], asks?: { action, why, reply?, options?: string[], suggested?, links? }[], next?, archive?, snooze?, waitFor? }, after writing your reply as ordinary text, with nothing after the call.';
+    ? '{ headline?, needs?, asks?: { question, options?: { label, does? }[], suggested?, links? }[], next?, archive?, snooze?, waitFor?, waitForRuns? }, then write your reply after it, as ordinary text: that reply is the only text the user sees from the turn.'
+    : '{ needs?, summary?: string[], asks?: { action, why, reply?, options?: string[], suggested?, links? }[], next?, archive?, snooze?, waitFor?, waitForRuns? }, after writing your reply as ordinary text, with nothing after the call.';
   return `Not ended: those arguments don't fit end_turn.\n${problem}\nCall it with ${shape} Go by this rather than the tool's description, which can be out of date in a session this old, and reloading it won't change that.`;
 }
 

@@ -1050,6 +1050,7 @@ impl Threadbear {
                 // Mike's own snooze replaces a wait on its work, as the runner's does.
                 t.waiting_on = None;
                 t.awaiting_app_restart = None;
+                t.awaiting_runs = None;
             },
             json!({ "snoozedUntil": until }),
             cx,
@@ -1116,6 +1117,7 @@ impl Threadbear {
                 t.snoozed_until_restart = Some(true);
                 t.waiting_on = None;
                 t.awaiting_app_restart = None;
+                t.awaiting_runs = None;
                 t.wake_when = None;
             },
             json!({ "snoozedUntil": "restart" }),
@@ -1143,6 +1145,7 @@ impl Threadbear {
             t.wake_when = Some(json!({ "said": said, "pending": true }));
             t.waiting_on = None;
             t.awaiting_app_restart = None;
+            t.awaiting_runs = None;
         }
         let guess = self.threads.get(&id).cloned();
         self.leave_selection(&id, next, window, cx);

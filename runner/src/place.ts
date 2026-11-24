@@ -25,7 +25,8 @@
 // another release), or until something said in words happens (a time, a
 // topic or both, `pending` while the model reads them), or until other
 // threads finish (with a time at the latest), or until Mike's app restarts
-// onto a new build (a day at most). Each sleep has a time (snoozedUntil):
+// onto a new build (a day at most), or until GitHub workflow runs finish
+// (ci-runs.ts; a time at the latest). Each sleep has a time (snoozedUntil):
 // a far-off one, UNTIL_RESTART, for a restart or for words with no time.
 // Once that time has passed it still reads as a sleep here until the timer
 // wakes it; `placeBucket` says where the lists show it, by the clock.
@@ -40,6 +41,7 @@
 //   wordsFailed   no answer: back out; needs that pending wait.
 //   waitOn        end_turn's waitFor or a lab review; needs a time sleep.
 //   forApp        wait_for_app_restart; needs a time sleep.
+//   forRuns       end_turn's waitForRuns; needs a time sleep.
 //   checked       the librarian woke an agent's wait to check (wakeChecked);
 //                 needs a sleep with words.
 //   wake          by itself: its time, a restart or new release, a topic,
@@ -65,15 +67,15 @@ import type { WakeWhen } from './wake-when.ts';
 export const FAR_OFF = '9999-12-31T00:00:00.000Z';
 
 export const PLACE_FIELDS = [
-  'snoozedUntil', 'snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp',
+  'snoozedUntil', 'snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp', 'waitingOnRuns',
   'snoozedAt', 'woke', 'wakeChecked', 'archivedAt', 'archivedBy', 'archiveVerdict', 'unarchivedBySchedule', 'keptOut',
 ] as const;
 export type PlaceField = (typeof PLACE_FIELDS)[number];
 export type PlaceFields = Pick<ThreadRecord, PlaceField>;
 
 // The fields that make up a sleep, which every end of one clears.
-const SLEEP_FIELDS = ['snoozedUntil', 'snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp'] as const;
-type SleepDetail = Pick<ThreadRecord, 'snoozedUntilRestart' | 'untilRelease' | 'wakeWhen' | 'waitingOn' | 'hibernatedForApp'>;
+const SLEEP_FIELDS = ['snoozedUntil', 'snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp', 'waitingOnRuns'] as const;
+type SleepDetail = Pick<ThreadRecord, 'snoozedUntilRestart' | 'untilRelease' | 'wakeWhen' | 'waitingOn' | 'hibernatedForApp' | 'waitingOnRuns'>;
 export type Wait = NonNullable<ThreadRecord['waitingOn']>[number];
 
 export type SleepFor =
@@ -83,6 +85,8 @@ export type SleepFor =
   | { kind: 'words'; wakeWhen: WakeWhen }
   | { kind: 'threads'; waitingOn: Wait[] }
   | { kind: 'app' }
+  // GitHub workflow runs: the keys of the ci-runs watches it waits on.
+  | { kind: 'runs'; keys: string[] }
   // Fields together that no move writes: kept as found.
   | { kind: 'odd'; fields: SleepDetail };
 
@@ -118,6 +122,7 @@ export type PlaceEvent =
   | { kind: 'wordsFailed'; said: string }
   | { kind: 'waitOn'; waits: Wait[] }
   | { kind: 'forApp' }
+  | { kind: 'forRuns'; keys: string[] }
   | { kind: 'checked'; threadId: string; seq: number }
   | { kind: 'wake' }
   | { kind: 'message'; fromSchedule: boolean; fromMike: boolean }
@@ -156,7 +161,7 @@ export function placeOf(rec: PlaceFields): Place {
 }
 
 function sleepFor(rec: PlaceFields): SleepFor {
-  const has = (['snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp'] as const).filter((k) => rec[k] !== undefined);
+  const has = (['snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp', 'waitingOnRuns'] as const).filter((k) => rec[k] !== undefined);
   const only = (...ks: string[]) => has.length > 0 && has.every((k) => ks.includes(k));
   if (!has.length) return { kind: 'time' };
   if (only('snoozedUntilRestart', 'untilRelease') && rec.snoozedUntilRestart === true && rec.snoozedUntil === FAR_OFF && (rec.untilRelease === undefined || typeof rec.untilRelease === 'string')) {
@@ -165,6 +170,7 @@ function sleepFor(rec: PlaceFields): SleepFor {
   if (only('wakeWhen') && isObject(rec.wakeWhen)) return { kind: 'words', wakeWhen: rec.wakeWhen };
   if (only('waitingOn') && Array.isArray(rec.waitingOn)) return { kind: 'threads', waitingOn: rec.waitingOn };
   if (only('hibernatedForApp') && rec.hibernatedForApp === true) return { kind: 'app' };
+  if (only('waitingOnRuns') && Array.isArray(rec.waitingOnRuns)) return { kind: 'runs', keys: rec.waitingOnRuns };
   const fields: SleepDetail = {};
   for (const k of has) (fields as Record<string, unknown>)[k] = rec[k];
   return { kind: 'odd', fields };
@@ -201,6 +207,9 @@ export function placeFields(place: Place): { [K in PlaceField]: PlaceFields[K] |
         break;
       case 'app':
         out.hibernatedForApp = true;
+        break;
+      case 'runs':
+        out.waitingOnRuns = f.keys;
         break;
       case 'odd':
         Object.assign(out, f.fields);
@@ -280,10 +289,11 @@ export function movePlace(place: Place, e: PlaceEvent, now: number): PlaceMove {
       if (!pendingWords(place, e.said)) return no('it was woken or put away again while its words were read');
       return ok(withSleep(place, undefined, marks));
     case 'waitOn':
-    case 'forApp': {
+    case 'forApp':
+    case 'forRuns': {
       const sleep = place.kind === 'inbox' ? undefined : place.sleep;
       if (!sleep || sleep.for.kind !== 'time') return no('it has no sleep until a time to wait in');
-      const f: SleepFor = e.kind === 'waitOn' ? { kind: 'threads', waitingOn: e.waits } : { kind: 'app' };
+      const f: SleepFor = e.kind === 'waitOn' ? { kind: 'threads', waitingOn: e.waits } : e.kind === 'forRuns' ? { kind: 'runs', keys: e.keys } : { kind: 'app' };
       return ok({ ...place, sleep: { until: sleep.until, for: f } } as Place);
     }
     case 'checked': {

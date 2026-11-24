@@ -1,5 +1,6 @@
-// GitHub Actions runs a thread set off (experiment ciRuns; docs/protocol/panels.md,
-// "Highlights", Runs). The commits a thread pushed and the workflows it
+// GitHub Actions runs a thread set off (docs/protocol/panels.md,
+// "Highlights", Runs), and the runs a hibernating thread waits on (end_turn's
+// waitForRuns, waitKeys and waitResult below). The commits a thread pushed and the workflows it
 // started with `gh workflow run` are found with its highlights
 // (highlights.ts); this asks the `gh` CLI, on the user's own login, for the
 // runs each one started, and keeps asking only while one is queued or
@@ -31,6 +32,9 @@ export type CiWatch = {
   dir?: string; // the folder to ask git and gh in, when not the thread's
   since: string; // when it was pushed or dispatched
   done?: true; // nothing more to ask about
+  found?: string[]; // its runs' ids ("run:<id>"), as last seen
+  named?: true; // a run an agent named to wait on (end_turn's waitForRuns)
+  fails?: number; // looks in a row that failed, for a named run
 };
 
 export type CiRunsState = {
@@ -51,6 +55,8 @@ const NO_RUNS_MS = 3 * 60_000;
 const GIVE_UP_MS = 2 * 60 * 60_000;
 // Runs come a few seconds after a push: all done before this may have more.
 const SETTLE_MS = 30_000;
+// A named run gh can't see this many looks in a row is let go.
+const NAMED_FAILS = 3;
 
 export function emptyCiRuns(): CiRunsState {
   return { watches: [], runs: [], quiet: 0 };
@@ -157,12 +163,16 @@ export async function check(state: CiRunsState, gh: Gh, findCommit: FindCommit, 
     } catch (e) {
       // A commit in no repo here and with no repo named is let go now:
       // asking again won't find it (a thread in a folder of repos was asked
-      // about for two hours, 14 Nov 2026).
-      if (age > GIVE_UP_MS || e === NOWHERE) w.done = true;
+      // about for two hours, 14 Nov 2026). A named run gh can't see (a
+      // wrong id or repo) after a few tries likewise.
+      w.fails = (w.fails ?? 0) + 1;
+      if (age > GIVE_UP_MS || e === NOWHERE || (w.named && w.fails >= NAMED_FAILS)) w.done = true;
       continue;
     }
+    delete w.fails;
     for (const r of found) if (merge(state, r)) changed = true;
     const mine = w.runId ? found.filter((r) => r.id === `run:${w.runId}`) : found;
+    if (mine.length) w.found = [...new Set([...(w.found ?? []), ...mine.map((r) => r.id)])];
     if (age > GIVE_UP_MS) w.done = true;
     else if (!mine.length && age > NO_RUNS_MS) w.done = true;
     else if (mine.length && mine.every(finished) && age > SETTLE_MS) w.done = true;
@@ -224,4 +234,112 @@ function merge(state: CiRunsState, r: CiRun): boolean {
 // Single quotes around each argument, for the login shell `gh` runs in.
 export function shellQuote(args: string[]): string {
   return args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ');
+}
+
+// ---- Waiting on runs (end_turn's waitForRuns) ----
+
+// A run an agent named: its id and, when not the thread's own repo, owner/name.
+export type NamedRun = { id: number; repo?: string };
+// What end_turn's waitForRuns asked for: the thread's own runs, or named ones.
+export type RunsWait = { mine: true } | { runs: NamedRun[] };
+
+export const MAX_NAMED_RUNS = 5;
+const RUN_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d+)(?:[/?#].*)?$/;
+
+// One entry of waitForRuns: a run's link, its id, or { run, repo }. Says
+// what's wrong with one it can't read.
+export function namedRun(x: unknown): NamedRun | string {
+  const o = x && typeof x === 'object' ? (x as Record<string, unknown>) : undefined;
+  const raw = String(o ? (o.run ?? '') : (x ?? '')).trim();
+  const repo = typeof o?.repo === 'string' ? o.repo.trim() : '';
+  if (repo && !REPO.test(repo)) return `"${repo}" isn't a repo as owner/name.`;
+  const url = RUN_URL.exec(raw);
+  if (url) return { id: Number(url[2]), repo: url[1] };
+  if (/^\d{1,15}$/.test(raw)) return repo ? { id: Number(raw), repo } : { id: Number(raw) };
+  return `"${raw.slice(0, 80)}" isn't a run id or a github.com link to a run.`;
+}
+
+// The watches a wait is on. Named runs are added as watches of their own
+// (or one that already has the run is watched again); for its own runs, the
+// ones still open. None means there's nothing to wait on.
+export function waitKeys(state: CiRunsState, wait: RunsWait, now: number): string[] {
+  if ('mine' in wait) return state.watches.filter((w) => !w.done).map((w) => w.key);
+  const keys: string[] = [];
+  const since = new Date(now).toISOString();
+  for (const n of wait.runs) {
+    const key = `run:${n.repo ?? ''}:${n.id}`;
+    let w = state.watches.find((x) => x.key === key || (x.runId === n.id && (x.repo ?? '') === (n.repo ?? '')));
+    if (!w) {
+      w = { key, runId: n.id, since, named: true };
+      if (n.repo) w.repo = n.repo;
+      state.watches.push(w);
+    } else if (w.done) {
+      // Looked at again: it may have been re-run since.
+      delete w.done;
+      w.since = since;
+    }
+    if (!keys.includes(w.key)) keys.push(w.key);
+  }
+  if (keys.length) {
+    state.quiet = 0;
+    // Never trims what it just added, as WATCHES_KEPT is well over MAX_NAMED_RUNS.
+    state.watches = state.watches.slice(-WATCHES_KEPT);
+  }
+  return keys;
+}
+
+// How a wait stands: still going, or over with each run's result, the
+// watches that found no runs, and the runs still going when watching
+// stopped (after GIVE_UP_MS, or let go).
+export type WaitResult =
+  | { pending: true }
+  | { pending: false; runs: CiRun[]; noRuns: CiWatch[]; unfinished: CiRun[]; lost: string[] };
+
+export function waitResult(state: CiRunsState, keys: string[]): WaitResult {
+  const runs: CiRun[] = [];
+  const noRuns: CiWatch[] = [];
+  const lost: string[] = [];
+  for (const key of keys) {
+    const w = state.watches.find((x) => x.key === key);
+    if (!w) {
+      lost.push(key);
+      continue;
+    }
+    if (!w.done) return { pending: true };
+    const mine = state.runs.filter((r) => w.found?.includes(r.id));
+    if (!mine.length) noRuns.push(w);
+    for (const r of mine) if (!runs.some((x) => x.id === r.id)) runs.push(r);
+  }
+  runs.sort((a, b) => a.at.localeCompare(b.at));
+  return { pending: false, runs: runs.filter(finished), noRuns, unfinished: runs.filter((r) => !finished(r)), lost };
+}
+
+const SAID: Record<CiRunStatus, string> = { queued: 'still queued', running: 'still running', passed: 'passed', failed: 'failed', cancelled: 'cancelled', skipped: 'skipped' };
+
+// "CI (main, abc1234): failed https://github.com/…"
+export function runLine(r: CiRun): string {
+  const at = [r.branch, r.sha].filter(Boolean).join(', ');
+  return `- ${r.workflow}${at ? ` (${at})` : ''}: ${SAID[r.status]} ${r.url}`;
+}
+
+// The message a thread wakes with once its wait is over.
+export function waitMessage(res: Extract<WaitResult, { pending: false }>): { text: string; why: string } {
+  const parts: string[] = [];
+  const failed = res.runs.filter((r) => r.status === 'failed').length;
+  if (res.runs.length) {
+    parts.push(`The GitHub workflow runs you hibernated to wait on have finished:\n${res.runs.map(runLine).join('\n')}`);
+  }
+  if (res.unfinished.length) {
+    parts.push(`Threadbear stopped watching these after 2 hours while they were still going, so check them yourself (gh run view):\n${res.unfinished.map(runLine).join('\n')}`);
+  }
+  const none = res.noRuns.filter((w) => !w.named);
+  if (none.length) parts.push(`No workflow runs were found for ${none.map((w) => (w.sha ? `commit ${w.sha}` : w.workflow ? `the ${w.workflow} dispatch` : w.key)).join(', ')}.`);
+  const unseen = res.noRuns.filter((w) => w.named);
+  if (unseen.length) parts.push(`gh couldn't find ${unseen.map((w) => `run ${w.runId}${w.repo ? ` in ${w.repo}` : ''}`).join(', ')}. Check the id and repo.`);
+  if (res.lost.length && !parts.length) parts.push('Threadbear lost track of the runs you were waiting on. Check them yourself (gh run list).');
+  parts.push('Carry on from here.');
+  const why = res.unfinished.length ? 'stopped watching its GitHub workflows'
+    : failed ? `${failed === 1 ? 'a GitHub workflow' : `${failed} GitHub workflows`} failed`
+    : res.runs.length ? 'its GitHub workflows finished' : 'no GitHub workflow runs to wait on';
+  return { text: parts.join('\n\n'), why };
 }

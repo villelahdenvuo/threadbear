@@ -1,14 +1,17 @@
-// GitHub Actions runs in Highlights (experiment ciRuns; ci-runs.ts and
-// runner/ci-runs.ts): the runs a thread's pushes and dispatches set off,
-// asked of `gh` only while one is queued or running.
+// GitHub Actions runs in Highlights (ci-runs.ts and runner/ci-runs.ts): the
+// runs a thread's pushes and dispatches set off, asked of `gh` only while one
+// is queued or running; and a thread hibernating until runs finish (end_turn's
+// waitForRuns).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { makeHarness, tmpDir } from '../helpers/fakes.ts';
 import { PATIENCE_MS } from '../helpers/patience.ts';
 import { EXPERIMENTS } from '../../src/experiments.ts';
-import { addWatches, check, delayMs, emptyCiRuns, shellQuote, statusOf, watching } from '../../src/ci-runs.ts';
+import { addWatches, check, delayMs, emptyCiRuns, namedRun, shellQuote, statusOf, waitKeys, waitMessage, waitResult, watching } from '../../src/ci-runs.ts';
+import { runsFromTool } from '../../src/needs.ts';
+import { WAIT_FOR_DEFAULT_MS } from '../../src/runner/hibernation.ts';
+import { checkSummary } from '../helpers/protocol-check.ts';
 import { dispatchOf, emptyHighlights, observe, pushDir, pushedRepo, view } from '../../src/highlights.ts';
 import type { PersistedEvent } from '../../src/protocol.ts';
 
@@ -25,10 +28,8 @@ const ghRun = (id: number, workflow: string, status: string, conclusion = '', at
   databaseId: id, status, conclusion, workflowName: workflow, headSha: FULL, headBranch: 'feat', url: `https://github.com/o/r/actions/runs/${id}`, event: 'push', createdAt: at,
 });
 
-test('ciRuns: off by default, with a check-in booked', () => {
-  const x = EXPERIMENTS.find((e) => e.id === 'ciRuns');
-  assert.equal(x?.on, false);
-  assert.match(x?.reminder ?? '', /^[0-9a-f]{8}$/);
+test('ciRuns: standard, no longer an experiment', () => {
+  assert.equal(EXPERIMENTS.find((e) => (e.id as string) === 'ciRuns'), undefined);
 });
 
 test('ciRuns: GitHub states read as queued, running, passed, failed, cancelled or skipped', () => {
@@ -232,10 +233,8 @@ async function until(ok: () => boolean, what: string): Promise<void> {
   }
 }
 
-function setup(on = true) {
-  const home = tmpDir();
-  if (on) fs.writeFileSync(path.join(home, 'runner.json'), JSON.stringify({ experiments: { ciRuns: true } }));
-  const h = makeHarness(home);
+function setup() {
+  const h = makeHarness(tmpDir());
   const commands: string[] = [];
   let runs = [ghRun(1, 'CI', 'in_progress')];
   h.runner.ciShell = async (_cwd, command) => {
@@ -322,14 +321,7 @@ test('ciRuns: a re-run in a thread is followed even though gh prints nothing', a
   assert.match(commands.at(-1)!, /^gh 'run' 'view' '5' '-R' 'o\/r'/);
 });
 
-test('ciRuns: off, or archived, nothing is asked and no runs are shown', async () => {
-  const off = setup(false);
-  off.push();
-  off.h.clock.advance(60_000);
-  await settle();
-  assert.equal(off.commands.length, 0);
-  assert.equal(off.h.runner.highlights(off.id).runs, undefined);
-
+test('ciRuns: archived, nothing is asked', async () => {
   const on = setup();
   on.push();
   await until(() => Boolean(on.h.runner.threads.get(on.id)!.rt.ciTimer), 'a look booked');
@@ -337,4 +329,122 @@ test('ciRuns: off, or archived, nothing is asked and no runs are shown', async (
   on.h.clock.advance(60_000);
   await settle();
   assert.equal(on.commands.length, 0);
+});
+
+// ---- waitForRuns ----
+
+const iso = (t: number) => new Date(t).toISOString();
+
+test('waitForRuns: reads true, run links, ids and { run, repo }, only with needs "nothing"', () => {
+  assert.deepEqual(namedRun('https://github.com/villelahdenvuo/threadbear/actions/runs/123/job/9'), { id: 123, repo: 'villelahdenvuo/threadbear' });
+  assert.deepEqual(namedRun(456), { id: 456 });
+  assert.deepEqual(namedRun({ run: '789', repo: 'o/r' }), { id: 789, repo: 'o/r' });
+  assert.match(namedRun('the CI one') as string, /isn't a run id/);
+  assert.match(namedRun({ run: 1, repo: 'nope' }) as string, /owner\/name/);
+  assert.deepEqual(runsFromTool({ needs: 'nothing', waitForRuns: true }), { mine: true });
+  assert.deepEqual(runsFromTool({ waitForRuns: [5, '5', 'junk'] }), { runs: [{ id: 5 }] });
+  assert.equal(runsFromTool({ needs: 'you', asks: [{ question: 'x' }], waitForRuns: true }), undefined);
+  assert.equal(runsFromTool({ needs: 'nothing', waitForRuns: [] }), undefined);
+});
+
+test('waitForRuns: waits on its open watches, or named runs as watches of their own, then says how each went', async () => {
+  const state = emptyCiRuns();
+  state.watches.push({ key: 'commit:a1b2c3d', sha: 'a1b2c3d', repo: 'o/r', since: iso(T0) });
+  state.watches.push({ key: 'commit:0000000', sha: '0000000', since: iso(T0 - 3_600_000), done: true });
+  assert.deepEqual(waitKeys(state, { mine: true }, T0), ['commit:a1b2c3d']);
+  assert.deepEqual(waitKeys(state, { runs: [{ id: 42, repo: 'fork/r' }] }, T0), ['run:fork/r:42']);
+  const keys = ['commit:a1b2c3d', 'run:fork/r:42'];
+  let answer: Record<string, unknown>[] = [ghRun(1, 'CI', 'in_progress')];
+  let fork = ghRun(42, 'Deploy', 'queued');
+  const gh = async (args: string[]) => JSON.stringify(args[1] === 'view' ? { ...fork, url: 'https://github.com/fork/r/actions/runs/42' } : answer);
+  await check(state, gh, async () => ({ full: FULL }), T0 + 5_000);
+  assert.deepEqual(waitResult(state, keys), { pending: true });
+  answer = [ghRun(1, 'CI', 'completed', 'failure')];
+  fork = ghRun(42, 'Deploy', 'completed', 'success');
+  await check(state, gh, async () => ({ full: FULL }), T0 + 60_000);
+  const res = waitResult(state, keys);
+  assert.equal(res.pending, false);
+  if (res.pending) return;
+  const { text, why } = waitMessage(res);
+  assert.equal(why, 'a GitHub workflow failed');
+  assert.match(text, /^The GitHub workflow runs you hibernated to wait on have finished:\n- CI \(feat, a1b2c3d\): failed https:\/\/github\.com\/o\/r\/actions\/runs\/1\n- Deploy \(feat, a1b2c3d\): passed https:\/\/github\.com\/fork\/r\/actions\/runs\/42/);
+});
+
+test('waitForRuns: runs still going when watching stops after two hours, or a run gh can\'t find, are said', async () => {
+  const state = emptyCiRuns();
+  state.watches.push({ key: 'commit:a1b2c3d', sha: 'a1b2c3d', repo: 'o/r', since: iso(T0) });
+  const keys = waitKeys(state, { mine: true }, T0);
+  await check(state, async () => JSON.stringify([ghRun(1, 'CI', 'in_progress')]), async () => ({ full: FULL }), T0 + 5_000);
+  await check(state, async () => JSON.stringify([ghRun(1, 'CI', 'in_progress')]), async () => ({ full: FULL }), T0 + 3 * 3_600_000);
+  const res = waitResult(state, keys);
+  assert.equal(res.pending, false);
+  if (res.pending) return;
+  const { text, why } = waitMessage(res);
+  assert.equal(why, 'stopped watching its GitHub workflows');
+  assert.match(text, /stopped watching these after 2 hours while they were still going, so check them yourself/);
+
+  const named = emptyCiRuns();
+  const nk = waitKeys(named, { runs: [{ id: 9, repo: 'o/r' }] }, T0);
+  for (let i = 0; i < 3; i++) await check(named, async () => { throw new Error('HTTP 404'); }, async () => undefined, T0 + i * 15_000);
+  const gone = waitResult(named, nk);
+  assert.equal(gone.pending, false);
+  if (gone.pending) return;
+  assert.match(waitMessage(gone).text, /gh couldn't find run 9 in o\/r/);
+});
+
+const END_TURN = 'mcp__threadbear__end_turn';
+
+test('waitForRuns: a thread that pushed hibernates until its runs finish, under Running, and wakes with each result', async () => {
+  const { h, id, push, setRuns } = setup();
+  const s = h.adapter.sessions.at(-1)!;
+  push();
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'e1', name: END_TURN, kind: 'mcp', title: 'end_turn', input: { needs: 'nothing', waitForRuns: true } } });
+  s.text('m1', 'Pushed; waiting on CI.');
+  s.result();
+  let t = h.runner.get(id);
+  assert.equal(t.awaitingRuns, true);
+  assert.deepEqual(checkSummary(t), []);
+  assert.equal(Date.parse(t.snoozedUntil!), h.clock.now() + WAIT_FOR_DEFAULT_MS);
+  assert.ok(h.events(id).some((e) => e.type === 'system.note' && /^Hibernating until its GitHub workflows finish, or .+ at the latest\.$/.test(e.text)));
+  h.clock.advance(5_000);
+  await until(() => h.runner.highlights(id).runs?.[0]?.status === 'running', 'the run');
+  assert.ok(h.runner.get(id).snoozedUntil, 'still asleep while it runs');
+  setRuns([ghRun(1, 'CI', 'completed', 'success')]);
+  const rec = h.runner.threads.get(id)!;
+  for (let i = 0; i < 10 && h.runner.get(id).snoozedUntil; i++) {
+    await until(() => !rec.rt.ciChecking && Boolean(rec.rt.ciTimer), 'the next look booked');
+    h.clock.advance(2 * 60_000);
+    await settle();
+  }
+  t = h.runner.get(id);
+  assert.equal(t.snoozedUntil, undefined);
+  assert.equal(t.awaitingRuns, undefined);
+  const msg = h.events(id).filter((e) => e.type === 'user.message').at(-1);
+  assert.equal(msg.origin, 'runner');
+  assert.match(msg.text, /^The GitHub workflow runs you hibernated to wait on have finished:\n- CI \(feat, a1b2c3d\): passed https:\/\/github\.com\/o\/r\/actions\/runs\/1/);
+  assert.ok(h.events(id).some((e) => e.type === 'system.note' && /^Woke up.*: its GitHub workflows finished\.$/.test(e.text)));
+});
+
+test('waitForRuns: with nothing going it doesn\'t hibernate, and the agent is told', () => {
+  const { h, id } = setup();
+  const s = h.adapter.sessions.at(-1)!;
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'e1', name: END_TURN, kind: 'mcp', title: 'end_turn', input: { needs: 'nothing', waitForRuns: true } } });
+  s.text('m1', 'Waiting on CI.');
+  s.result();
+  assert.equal(h.runner.get(id).snoozedUntil, undefined);
+  const msg = h.events(id).filter((e) => e.type === 'user.message').at(-1);
+  assert.match(msg.text, /isn't watching any that are queued or running/);
+});
+
+test('waitForRuns: a named run on another repo is watched by id, and a restart looks again', async () => {
+  const { h, id, commands, setRuns } = setup();
+  setRuns([]);
+  const s = h.adapter.sessions.at(-1)!;
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'e1', name: END_TURN, kind: 'mcp', title: 'end_turn', input: { needs: 'nothing', waitForRuns: ['https://github.com/fork/r/actions/runs/77'] } } });
+  s.text('m1', 'Waiting on the fork run.');
+  s.result();
+  assert.equal(h.runner.get(id).awaitingRuns, true);
+  assert.deepEqual(h.runner.threads.get(id)!.rec.waitingOnRuns, ['run:fork/r:77']);
+  h.clock.advance(5_000);
+  await until(() => commands.some((c) => c.startsWith("gh 'run' 'view' '77' '-R' 'fork/r'")), 'the run asked about');
 });

@@ -93,7 +93,7 @@ import type { Models } from './models/index.ts';
 import { localWhen } from './wake-when.ts';
 import { parseWhen } from './when.ts';
 import { SERVER_NAME } from './threadbear-mcp.ts';
-import { archiveFromTool, bylineFromTool, END_TURN_TOOL, snoozeFromTool, waitForFromTool, WakeRead } from './needs.ts';
+import { archiveFromTool, bylineFromTool, END_TURN_TOOL, runsFromTool, snoozeFromTool, waitForFromTool, WakeRead } from './needs.ts';
 import { dropsStream, replyTurn, turnNeeds, type ReplyEvent, type ReplyMove, type ReplyOut } from './reply-phase.ts';
 import { cliHears, cliOf, cliRuntime, runningSession, STALE, type CliEvent, type CliMove } from './cli-session.ts';
 import type { Needs } from './needs.ts';
@@ -1064,6 +1064,8 @@ export class Runner {
     this.armSnoozeTimer();
     // PRs whose auto-fix wand is on (runner/pr-watch.ts).
     this.armPrWatch();
+    // Threads hibernating until GitHub workflow runs finish (runner/ci-runs.ts).
+    this.resumeRunsWaits();
     // Waits for room are in thread.json, so they outlive a restart.
     this.armRoomTimer();
     // So are waits for the network.
@@ -3125,11 +3127,13 @@ export class Runner {
     // Waiting on other threads (end_turn's waitFor), with snooze as the
     // latest it wakes.
     const waitFor = away && !archive ? waitForFromTool(turn.endTurn) : undefined;
+    // Waiting on GitHub workflow runs (end_turn's waitForRuns), likewise.
+    const forRuns = away && !archive && !waitFor ? runsFromTool(turn.endTurn) : undefined;
     // Done for now but waiting to hear the app restarted onto its change
     // (wait_for_app_restart): it hibernates until that message wakes it,
     // a day at most as the request lapses then, rather than sitting in
     // Mike's inbox as done when it isn't (18 Nov 2026, 41324bd6).
-    const forApp = away && !archive && !snooze && !waitFor && !!this.awaitingAppRestart?.(rec.id);
+    const forApp = away && !archive && !snooze && !waitFor && !forRuns && !!this.awaitingAppRestart?.(rec.id);
     // Done, with nothing left running: any thread waiting on this one hears.
     // Not if it put itself away to wait too, as it hasn't finished. An auto
     // turn counts (the one after a sub-agent or background job ends is
@@ -3145,13 +3149,13 @@ export class Runner {
     // as it asked: it finishes when its next turn does. One that failed is
     // released after endTurn (releaseFailedReview).
     const reviewEnded = !turn.local && outcome === 'completed' && this.awaitedReview(rec) &&
-      !waitForFromTool(turn.endTurn) && !snoozeFromTool(turn.endTurn);
+      !waitForFromTool(turn.endTurn) && !snoozeFromTool(turn.endTurn) && !runsFromTool(turn.endTurn);
     const finished = (reviewEnded || (outcome === 'completed' && said?.needs === 'nothing' && !archive && !forApp &&
-      !snoozeFromTool(turn.endTurn) && !waitForFromTool(turn.endTurn))) && !rec.queue.length &&
+      !snoozeFromTool(turn.endTurn) && !waitForFromTool(turn.endTurn) && !runsFromTool(turn.endTurn))) && !rec.queue.length &&
       !rec.subagents?.some((a) => a.status === 'running') && !rt.tasks.length && !rt.approvals.size &&
       // A job that ended mid-turn: the CLI's turn reading its result is next.
       !rt.taskEndedInTurn && !rt.finished.length;
-    const holdQueue = Boolean(rec.queue.length && (archive || snooze || waitFor || forApp));
+    const holdQueue = Boolean(rec.queue.length && (archive || snooze || waitFor || forRuns || forApp));
     const loginBefore = rec.accountId;
     this.endTurn(st, ev.seq, outcome === 'failed' ? 'error' : 'idle', outcome, limitHit, netLost, holdQueue, signedOut);
     // A pool thread refused as signed out that endTurn moved to another
@@ -3225,6 +3229,7 @@ export class Runner {
       this.update({ threadId: rec.id, archived: true, archivedBy: 'agent', moveNote: { text: 'Archived, as the agent was asked to once it had finished.' } });
     }
     if (waitFor && !rt.turn && !rec.archivedAt && !this.stopping) this.waitOn(st, waitFor, snooze, turn.endTurnBy);
+    else if (forRuns && !rt.turn && !rec.archivedAt && !this.stopping) this.waitRuns(st, forRuns, snooze);
     else if (snooze && !rt.turn && !rec.archivedAt && !this.stopping) this.snoozeAfterTurn(st, snooze);
     else if (forApp && !rt.turn && !rec.archivedAt && !this.stopping) {
       this.update({ threadId: rec.id, snoozedUntil: new Date(this.clock.now() + APP_RESTART_MAX_AGE_MS).toISOString(), moveNote: { by: 'agent', text: 'Hibernating until the Threadbear app restarts onto the new build, a day at most.' } });
@@ -3883,6 +3888,8 @@ export class Runner {
         // Brought back out by hand: it stays out, however its next turn ends
         // (runner/quiet-inbox.ts).
         this.park(st, { kind: 'unarchive' });
+        // A wait on workflow runs goes on, and its looks stopped while archived.
+        if (rec.waitingOnRuns) queueMicrotask(() => this.kickCiRuns(st));
       }
     }
     this.noteMove(st, params, placeBefore, snoozedAtBefore, untilBefore);
@@ -4634,6 +4641,7 @@ export class Runner {
     // Only while something still listens for the restart: one archived when
     // it came isn't told, and its watch is spent (Codex's review, 19 Nov).
     if (rec.hibernatedForApp && rec.snoozedUntil && this.awaitingAppRestart?.(rec.id)) s.awaitingAppRestart = true;
+    if (rec.waitingOnRuns && rec.snoozedUntil) s.awaitingRuns = true;
     // Any thread waiting on the app, hibernating or not: the Updates panel
     // lists them with whether the build on its way has their commit.
     const appWant = rec.archivedAt ? undefined : this.appRestartWant?.(rec.id);

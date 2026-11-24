@@ -32,6 +32,7 @@ const STATES: Record<string, PlaceFields> = {
   wordsTopicOnly: { snoozedUntil: NO_WAKE_TIME, wakeWhen: { said: 'woodwork', topic: 'woodwork' } },
   threads: { snoozedUntil: FUTURE, waitingOn: [wait('a'), wait('b')], snoozedAt: EARLIER },
   app: { snoozedUntil: FUTURE, hibernatedForApp: true },
+  runs: { snoozedUntil: FUTURE, waitingOnRuns: ['commit:abc1234'] },
   oddSleep: { snoozedUntil: FUTURE, waitingOn: [wait('a')], wakeWhen: { said: 'x' }, hibernatedForApp: true },
   oddRestart: { snoozedUntil: FUTURE, snoozedUntilRestart: true },
   stray: { wakeWhen: { said: 'soon', pending: true }, untilRelease: 'r0', archivedAt: '' },
@@ -53,6 +54,7 @@ const EVENTS: Record<string, PlaceEvent> = {
   wordsFailed: { kind: 'wordsFailed', said: 'soon' },
   waitOn: { kind: 'waitOn', waits: [wait('c')] },
   forApp: { kind: 'forApp' },
+  forRuns: { kind: 'forRuns', keys: ['run:o/r:1'] },
   checked: { kind: 'checked', threadId: 'b', seq: 9 },
   wake: { kind: 'wake' },
   message: { kind: 'message', fromSchedule: false, fromMike: false },
@@ -75,6 +77,7 @@ const REFUSED: Record<string, string[]> = {
   wordsFailed: allBut('wordsPending'),
   waitOn: allBut('time', 'timePassed'),
   forApp: allBut('time', 'timePassed'),
+  forRuns: allBut('time', 'timePassed'),
   checked: allBut('wordsPending', 'words', 'wordsTopicOnly', 'archivedWords', 'oddSleep'),
 };
 function allBut(...keep: string[]): string[] {
@@ -86,7 +89,7 @@ type Rec = Record<string, unknown>;
 // update, sendTo and the end of a turn, hibernation.ts, reviews.ts), on a
 // copy of the fields.
 function byHand(r: Rec, e: PlaceEvent): void {
-  const sleepDetail = ['snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp'];
+  const sleepDetail = ['snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp', 'waitingOnRuns'];
   const bucket = () => (r.archivedAt ? 'archived' : r.snoozedUntil && Date.parse(r.snoozedUntil as string) > NOW ? 'snoozed' : 'inbox');
   const del = (...ks: string[]) => ks.forEach((k) => delete r[k]);
   switch (e.kind) {
@@ -121,6 +124,9 @@ function byHand(r: Rec, e: PlaceEvent): void {
       return;
     case 'forApp':
       r.hibernatedForApp = true;
+      return;
+    case 'forRuns':
+      r.waitingOnRuns = e.keys;
       return;
     case 'checked': {
       const ww = r.wakeWhen as { said: string };
@@ -200,7 +206,7 @@ test('where each place shows, and what a start wakes', () => {
   const where = Object.fromEntries(Object.entries(STATES).map(([n, f]) => [n, placeBucket(placeOf(f), NOW)]));
   assert.deepEqual(where, {
     inbox: 'inbox', inboxMarked: 'inbox', inboxFromSchedule: 'inbox', time: 'snoozed', timePassed: 'inbox', restart: 'snoozed', release: 'snoozed',
-    wordsPending: 'snoozed', words: 'snoozed', wordsTopicOnly: 'snoozed', threads: 'snoozed', app: 'snoozed', oddSleep: 'snoozed', oddRestart: 'snoozed',
+    wordsPending: 'snoozed', words: 'snoozed', wordsTopicOnly: 'snoozed', threads: 'snoozed', app: 'snoozed', runs: 'snoozed', oddSleep: 'snoozed', oddRestart: 'snoozed',
     stray: 'inbox', strayRestart: 'inbox', archived: 'archived', archivedBare: 'archived', archivedAsleep: 'archived', archivedWords: 'archived',
   });
   const wakes = (release: string | undefined) => Object.keys(STATES).filter((n) => wakesOnStart(placeOf(STATES[n]), release));
@@ -223,7 +229,7 @@ test('the places read as their kinds', () => {
   }));
   assert.deepEqual(kinds, {
     inbox: 'inbox', inboxMarked: 'inbox', inboxFromSchedule: 'inbox', time: 'snoozed/time', timePassed: 'snoozed/time', restart: 'snoozed/restart', release: 'snoozed/restart',
-    wordsPending: 'snoozed/words', words: 'snoozed/words', wordsTopicOnly: 'snoozed/words', threads: 'snoozed/threads', app: 'snoozed/app', oddSleep: 'snoozed/odd', oddRestart: 'snoozed/odd',
+    wordsPending: 'snoozed/words', words: 'snoozed/words', wordsTopicOnly: 'snoozed/words', threads: 'snoozed/threads', app: 'snoozed/app', runs: 'snoozed/runs', oddSleep: 'snoozed/odd', oddRestart: 'snoozed/odd',
     stray: 'inbox', strayRestart: 'inbox', archived: 'archived', archivedBare: 'archived', archivedAsleep: 'archived/threads', archivedWords: 'archived/words',
   });
 });
@@ -237,6 +243,7 @@ const VALUES: { [K in keyof PlaceFields]-?: unknown[] } = {
   wakeWhen: [{ said: 'x', pending: true }, { said: 'x', topic: 't', by: 'agent' }, 'nonsense'],
   waitingOn: [[wait('a')], [], 'x'],
   hibernatedForApp: [true, false],
+  waitingOnRuns: [['commit:abc1234'], [], 'x'],
   snoozedAt: [EARLIER],
   woke: [{ at: PAST }],
   wakeChecked: [{ said: 'x', from: {} }],
@@ -285,7 +292,7 @@ test('every shape of the fields reads as a Place and writes back as it was', () 
 });
 
 // The events whose callers check first (each has a refusal in REFUSED).
-const MAY_REFUSE: PlaceEvent['kind'][] = ['wordsAsked', 'wordsAnswered', 'wordsFailed', 'waitOn', 'forApp', 'checked'];
+const MAY_REFUSE: PlaceEvent['kind'][] = ['wordsAsked', 'wordsAnswered', 'wordsFailed', 'waitOn', 'forApp', 'forRuns', 'checked'];
 
 test('a pending wait in words that is no boolean still wakes on a start, as before', () => {
   assert.equal(wakesOnStart(placeOf({ snoozedUntil: FAR_OFF, wakeWhen: { said: 'x', pending: 1 as unknown as true } }), 'r1'), true);

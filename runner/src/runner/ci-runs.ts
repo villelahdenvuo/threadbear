@@ -1,5 +1,6 @@
-// GitHub Actions runs in a thread's Highlights (experiment ciRuns,
-// ci-runs.ts; docs/protocol/panels.md, "Highlights"). Looked at when a command's
+// GitHub Actions runs in a thread's Highlights (ci-runs.ts;
+// docs/protocol/panels.md, "Highlights"), and a thread hibernating until
+// runs finish (end_turn's waitForRuns: waitRuns, settleRunsWait). Looked at when a command's
 // result looks like a push or a `gh workflow run`, and when a client fetches
 // the thread's highlights (so a restart picks them up again). Then again on
 // a timer, only while a run is queued or running, and never for an archived
@@ -9,10 +10,12 @@ import { execFile } from 'node:child_process';
 import type { Runner, ThreadState } from '../runner.ts';
 import type { RunnerPart } from './part.ts';
 import type { EventBody } from '../protocol.ts';
-import { experimentOn } from '../experiments.ts';
 import { loginShell } from '../system-tools.ts';
 import path from 'node:path';
-import { addWatches, check, delayMs, emptyCiRuns, shellQuote, watching, type FindCommit, type Gh } from '../ci-runs.ts';
+import { addWatches, check, delayMs, emptyCiRuns, FIRST_DELAY_MS, shellQuote, waitKeys, waitMessage, waitResult, watching, type FindCommit, type Gh, type RunsWait } from '../ci-runs.ts';
+import { parseWhen } from '../when.ts';
+import { localWhen } from '../wake-when.ts';
+import { WAIT_FOR_DEFAULT_MS } from './hibernation.ts';
 
 // The first look waits a little: GitHub makes the runs a few seconds after
 // the push.
@@ -55,14 +58,13 @@ export const ciRunsPart = {
     if (body.type !== 'tool.result') return;
     const asked = st.rt.ciCalls?.delete(body.itemId) ?? false;
     if (!body.ok || !(asked || MAYBE_RUNS.test(body.text ?? ''))) return;
-    if (!experimentOn(this.cfg.home, 'ciRuns')) return;
     // After this event is in the log, so catching up sees it.
     queueMicrotask(() => this.kickCiRuns(st));
   },
 
   // Picks up anything new to watch and makes sure a look is booked.
   kickCiRuns(this: Runner, st: ThreadState): void {
-    if (st.rt.deleted || st.rec.archivedAt || !experimentOn(this.cfg.home, 'ciRuns')) return;
+    if (st.rt.deleted || st.rec.archivedAt) return;
     this.catchUpHighlights(st);
     const state = (st.rec.ciRuns ??= emptyCiRuns());
     const added = addWatches(state, st.rec.highlights!);
@@ -76,7 +78,7 @@ export const ciRunsPart = {
   async checkCiRuns(this: Runner, st: ThreadState): Promise<void> {
     st.rt.ciTimer = undefined;
     const state = st.rec.ciRuns;
-    if (!state || st.rt.deleted || st.rec.archivedAt || !experimentOn(this.cfg.home, 'ciRuns')) return;
+    if (!state || st.rt.deleted || st.rec.archivedAt) return;
     const run = this.ciShell ?? shell;
     const cwd = st.rec.cwd;
     const gh: Gh = (args, dir) => run(dir ?? cwd, `gh ${shellQuote(args)}`);
@@ -115,6 +117,68 @@ export const ciRunsPart = {
     addWatches(state, st.rec.highlights ?? { seq: 0, items: [], edited: [] });
     if (watching(state) && !st.rec.archivedAt && !st.rt.ciTimer) {
       st.rt.ciTimer = this.clock.setTimeout(() => void this.checkCiRuns(st), delayMs(state));
+    }
+    this.settleRunsWait(st);
+  },
+
+  // end_turn's waitForRuns, once the turn is over: hibernates until the
+  // runs are over, a day at most (or the snooze time), then wakes with how
+  // each went. Before this an agent waiting on CI booked a schedule with a
+  // shell check, and each raised a card the phone couldn't allow (24 Nov 2026).
+  waitRuns(this: Runner, st: ThreadState, wait: RunsWait, when: string | undefined): void {
+    const { rec } = st;
+    // Picks up this turn's pushes first.
+    this.kickCiRuns(st);
+    const state = (rec.ciRuns ??= emptyCiRuns());
+    const now = this.clock.now();
+    const keys = waitKeys(state, wait, now);
+    this.markDirty(st);
+    if (!keys.length) {
+      // Nothing of its own going: it's told so, rather than sleeping a day.
+      this.emit(st, { type: 'system.note', text: 'Not hibernated: none of this thread\'s GitHub workflow runs are queued or running.' });
+      const latest = state.runs.slice(0, 5).map((r) => `- ${r.workflow}: ${r.status} ${r.url}`).join('\n');
+      this.sendTo(st, `You asked to hibernate until this thread's GitHub workflow runs finish, but Threadbear isn't watching any that are queued or running${latest ? `. The latest it saw:\n${latest}` : ''}.\n\nIf the run is one this thread didn't start, end the turn again with waitForRuns naming it (its link, or { run, repo }). Otherwise carry on.`, [], { origin: 'runner', queue: true });
+      return;
+    }
+    let until: string | undefined;
+    if (when && !['restart', 'release'].includes(when.toLowerCase())) {
+      try {
+        until = parseWhen(when, now);
+      } catch {
+        until = undefined;
+      }
+    }
+    if (!until || Date.parse(until) <= now) until = new Date(now + WAIT_FOR_DEFAULT_MS).toISOString();
+    const from = this.place(rec);
+    this.update({ threadId: rec.id, snoozedUntil: until, moveNote: false });
+    if (!this.park(st, { kind: 'forRuns', keys })) return;
+    this.markDirty(st);
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    this.emit(st, { type: 'system.note', text: `Hibernating until its GitHub workflows finish, or ${localWhen(Date.parse(until), timeZone)} at the latest.`, move: { from, to: 'hibernating', by: 'agent', until } });
+    // A named run needs a look booked: it came from no push.
+    if (!st.rt.ciTimer && !st.rt.ciChecking) st.rt.ciTimer = this.clock.setTimeout(() => void this.checkCiRuns(st), FIRST_LOOK_MS);
+  },
+
+  // Wakes a thread whose awaited runs are all over, with how each went.
+  settleRunsWait(this: Runner, st: ThreadState): void {
+    const keys = st.rec.waitingOnRuns;
+    if (!keys || st.rt.deleted || st.rec.archivedAt || this.bucket(st.rec) !== 'snoozed') return;
+    const res = waitResult(st.rec.ciRuns ?? emptyCiRuns(), keys);
+    if (res.pending) return;
+    const { text, why } = waitMessage(res);
+    this.wake(st, { why });
+    this.armSnoozeTimer();
+    this.sendTo(st, text, [], { origin: 'runner', queue: true });
+    this.log.info('woke after waiting on workflow runs', { threadId: st.rec.id, runs: res.runs.length, unfinished: res.unfinished.length });
+  },
+
+  // A start: threads hibernating until runs finish look again, as their
+  // timers went with the last runner.
+  resumeRunsWaits(this: Runner): void {
+    for (const st of this.threads.values()) {
+      if (!st.rec.waitingOnRuns || st.rt.deleted || st.rec.archivedAt) continue;
+      this.kickCiRuns(st);
+      if (!st.rt.ciTimer && !st.rt.ciChecking) st.rt.ciTimer = this.clock.setTimeout(() => void this.checkCiRuns(st), FIRST_DELAY_MS);
     }
   },
 };

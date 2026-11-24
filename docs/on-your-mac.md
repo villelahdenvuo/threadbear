@@ -575,8 +575,8 @@ File references are where to look.
   rewrites anything: a commit made only there stays, and `tb status` says so.
   `tb land` refuses in that repo. If `origin` is Mike's repo rather than
   your own, leave this off.
-- **GitHub Actions runs in Highlights** (`runner/src/ci-runs.ts`,
-  experiment `ciRuns`, off by default): after a thread pushes a commit to
+- **GitHub Actions runs in Highlights** (`runner/src/ci-runs.ts`):
+  after a thread pushes a commit to
   GitHub or runs `gh workflow run` or `gh run rerun`, the runner runs `git rev-parse` and
   `gh run list` / `gh run view` in the thread's folder (or the repo the
   pushed commit is in, found by running `find` and `git rev-parse` on the
@@ -584,7 +584,10 @@ File references are where to look.
   shell and your own `gh` login (it never reads the token). It asks 5
   seconds after the push, then every 15 seconds to 2 minutes, only while a
   run is queued or running, and stops after 2 hours at most. Never for an
-  archived thread. The runs it finds are kept on the thread's record.
+  archived thread. The runs it finds are kept on the thread's record. A
+  thread hibernating until runs finish (end_turn's `waitForRuns`) is woken
+  by the same looks; a run it names that it didn't start is asked about
+  with `gh run view <id> -R <owner/name>`.
 - **Convex heartbeat** (`runner/src/sync.ts`): with sync on, the runner
   tells your deployment it is online once a minute. Before the first
   successful heartbeat, a failed request is retried after 1 second,
@@ -856,7 +859,7 @@ File references are where to look.
 | Your update build hosts, over ssh | yours | Only from the installed GPUI app, when `runner.json` has `updateBuildHosts` and main's `desktop/` has changed: a copy of your main's files to build it from, rsynced to `~/.cache/threadbear-check/gpui` on the first one that's a Mac and answers, and the two built binaries copied back (`desktop/scripts/stage-update.sh`) |
 | threadbear.mikecann.app | Mike (the What's new page) | Only in a fork, while one of Mike's releases is waiting: at each release check (every 6 hours) the runner reads `/changelog.json` (about 20 KB, 15-second timeout, nothing sent with it), and the GPUI app then downloads the pictures of the cards its Updates panel shows (at most 4 MB each, public addresses only), once each while it runs. Nothing from it is run or merged. |
 | GitHub | Mike's repo | Release tags fetched every 6 hours (15 minutes after a failed look); the fork at setup; from `tb land`, through your `gh`, a marked workflow's recent runs on main; with the `inlinePrs` experiment on (off by default), when you open a PR link in the desktop app, through your `gh`, that PR, its diff, its checks and its repo's merge settings, and the open or merged state of other PRs a thread links to; a check-up comment on Mike's check-ups Discussion, through your `gh`, only after you say Send on its card (`runner/src/checkup.ts`); and only when you press its button, a merge, close, reopen, review or the comment you typed (`runner/src/github-pr.ts`) |
-| GitHub API, through your `gh` | yours | Only with the `ciRuns` experiment on: the commit sha, repo, workflow name and branch a thread pushed or dispatched, to list that commit's Actions runs, while they're queued or running |
+| GitHub API, through your `gh` | yours | The commit sha, repo, workflow name and branch a thread pushed or dispatched, to list that commit's Actions runs, and the id and repo of a run a thread waits on, while they're queued or running |
 | cef-builds.spotifycdn.com | Spotify (CEF's official builds) | The installed Mac runner, only while a web runtime is installed, reads `/index.json` once a day, a minute after starting if due, to warn when this release's CEF pin is over 14 days behind stable (or checks fail for 3 days). Dev runners/tests do not poll; `THREADBEAR_CLI_UPDATES=off` disables it too. It sends no user content and stores the check in `<home>/runner/web-runtime-check.json`. From the GPUI app, only when you press Install web runtime: one download of the pinned build (135 MB), which nothing is sent with. Threadbear will publish its own signed copy later. Chromium itself then goes online only for the pages the GPUI app's web panels show; its own background requests are off (`--disable-background-networking`), and an agent's html and diagrams reach nothing (`desktop/web/src/mac/sealed.rs`). |
 | downloads.claude.ai, registry.npmjs.org | Anthropic, npm | CLI version checks and installs; `npm ci` |
 | Anthropic, OpenAI | yours | Your threads, through the official CLIs on your own logins. An approval card in a thread on Auto, with the thread's first and latest messages, goes to Opus through the same CLI so it can decide in your place. With the `inboxGuess` experiment on (off by default), when one of your own threads finishes with nothing for you, your last message to it and the agent's reply go to Haiku and to Opus through the same CLI, each to guess whether you needed to see it (not for a thread in a private folder). Unless you turn off Settings > General > Code review (`"labReview": false`), a thread's code change, with your message and the agent's reply, goes to your other provider's CLI as a review thread, as if you'd started one (or a fresh session of the same provider, with no other login). After a turn fails because the API couldn't be reached, the runner itself opens (and straight away closes) a connection to api.anthropic.com or chatgpt.com on port 443, at most once a minute, until one opens and the thread carries on. Nothing is sent over it (`runner/src/net-probe.ts`). |

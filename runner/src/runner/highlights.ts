@@ -8,7 +8,6 @@ import type { PanelPlace, PanelRequest, ThreadSummary } from '../protocol.ts';
 import { ErrorCode, RpcError } from '../protocol.ts';
 import { cutOut } from '../store.ts';
 import { emptyHighlights, MAX_URL, observe as observeHighlights, pinItem, remove as removeHighlight, unpin as unpinHighlight, upsert as upsertHighlight, view as highlightsView, absolute, type ThreadHighlights } from '../highlights.ts';
-import { experimentOn } from '../experiments.ts';
 import { PANEL_ACK_WAIT_MS, PANEL_PLACES, resolvePanel } from '../panel-requests.ts';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -24,7 +23,7 @@ export const highlightsPart = {
     const out = highlightsView(st.rec.highlights!, st.rec.brief);
     // Each PR's auto-fix wand (runner/pr-watch.ts).
     for (const h of out.highlights) if (h.kind === 'pr' && this.prWatched(h.url)) h.watched = true;
-    if (st.rec.ciRuns?.runs.length && experimentOn(this.cfg.home, 'ciRuns')) out.runs = st.rec.ciRuns.runs.map((r) => ({ ...r }));
+    if (st.rec.ciRuns?.runs.length) out.runs = st.rec.ciRuns.runs.map((r) => ({ ...r }));
     return out;
   },
 

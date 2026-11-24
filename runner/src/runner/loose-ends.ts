@@ -59,7 +59,7 @@ export const looseEndsPart = {
       // Hibernating to wait on its own work (other threads, the app
       // restarting onto what it landed) is still working, as the sidebar has it.
       // So is hibernating until something it watches for with its commits not on main yet.
-      const waiting = Boolean(s.waitingOn?.some((w) => !w.done) || s.awaitingAppRestart || (s.wakeWhen?.agent && s.wakeWhen.topic && s.looseEnds?.ends.some((e) => e.kind === 'unlanded')));
+      const waiting = Boolean(s.waitingOn?.some((w) => !w.done) || s.awaitingAppRestart || s.awaitingRuns || (s.wakeWhen?.agent && s.wakeWhen.topic && s.looseEnds?.ends.some((e) => e.kind === 'unlanded')));
       // So is one with a job still going in the background, unless its card
       // asks Mike for something: the sidebar has it under Running too
       // (inbox.rs, section_of). On 20 Nov a review-window fix whose turn

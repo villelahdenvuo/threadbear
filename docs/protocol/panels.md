@@ -38,7 +38,7 @@ type ThreadHighlights = {
                         // at most 200
   brief?: { text: string; at: string } // the librarian's line on where
                         // the thread is up to (see Projects)
-  runs?: CiRun[]        // experiment ciRuns: GitHub Actions runs, newest
+  runs?: CiRun[]        // GitHub Actions runs, newest
                         // first, at most 30 (below)
 }
 type CiRun = {
@@ -72,7 +72,7 @@ time a client asks and then from where it got to:
   later `git push` that prints `a..b branch -> branch` (or `[new branch]`)
   marks that branch's commits `pushed`.
 
-**Runs** (experiment `ciRuns`, off by default). A commit marked `pushed`
+**Runs**. A commit marked `pushed`
 with a `repo`, or one whose short sha resolves in a repo on this Mac, and
 a `gh workflow run` that worked (its workflow, `--ref`, `-R`, and the run's
 id when gh printed the run's URL), and a `gh run rerun <id or URL>` (that

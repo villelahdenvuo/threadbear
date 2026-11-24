@@ -128,6 +128,10 @@ When('{string} waits for the app update', async function (this: ThreadbearWorld,
   await this.app.do({ cmd: 'mock', method: 'waitOn', params: { title, app: true } });
 });
 
+When('{string} waits for its GitHub workflows', async function (this: ThreadbearWorld, title: string) {
+  await this.app.do({ cmd: 'mock', method: 'waitOn', params: { title, runs: true } });
+});
+
 // Under Hibernating for its schedule: when that runs, in the time's place
 // ("3:05 pm" today, "Mon 9:00 am" otherwise; the clock's own style).
 Then('the row {string} says when its schedule messages it', async function (this: ThreadbearWorld, title: string) {

@@ -44,7 +44,7 @@ export type ThreadHighlights = {
   highlights: Highlight[];
   edited: string[];
   brief?: { text: string; at: string };
-  // GitHub Actions runs the thread set off, newest first (experiment ciRuns).
+  // GitHub Actions runs the thread set off, newest first (ci-runs.ts).
   runs?: CiRun[];
 };
 
@@ -57,7 +57,7 @@ export type HighlightState = {
   // Command calls whose result matters (git commit, git push, gh pr
   // create), by itemId, until their tool.result comes.
   pending?: Record<string, { command: string }>;
-  // Workflows started with `gh workflow run`, for the ciRuns experiment
+  // Workflows started with `gh workflow run`, for the Runs section
   // (ci-runs.ts). Not shown as highlights.
   dispatches?: Dispatch[];
 };

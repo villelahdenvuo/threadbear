@@ -88,3 +88,10 @@ Feature: Section headings in the sidebar
     When "Add dark mode to the dashboard" waits for the app update
     Then the "Running" section lists "Add dark mode to the dashboard"
     And the row "Add dark mode to the dashboard" says "Waiting for the app update" on the right
+
+  @sidebar.sections
+  Scenario: A thread waiting for its GitHub workflows stays under Running
+    Given the "Inbox" section lists "Add dark mode to the dashboard"
+    When "Add dark mode to the dashboard" waits for its GitHub workflows
+    Then the "Running" section lists "Add dark mode to the dashboard"
+    And the row "Add dark mode to the dashboard" says "Until its GitHub workflows finish" on the right

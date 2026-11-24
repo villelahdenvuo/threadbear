@@ -295,6 +295,9 @@ pub fn live_line(t: &ThreadSummary) -> String {
         if t.awaiting_app_restart == Some(true) {
             return "Waiting for the app to restart onto it".to_owned();
         }
+        if t.awaiting_runs == Some(true) {
+            return "Waiting for its GitHub workflows to finish".to_owned();
+        }
         let titles: Vec<String> = t
             .waiting_on
             .iter()
