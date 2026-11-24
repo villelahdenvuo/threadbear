@@ -128,7 +128,7 @@ const HELP = `tb: talk to the Threadbear runner
   tb pools [--json]               the pools, their logins and room (* new threads start on it)
   tb actions <threadId> [--json]  the thread's actions, panels and patches (from its folder)
   tb highlights <threadId> [--json]  what the thread made, shared and pinned, and the librarian's brief
-  tb pr-watch on|off <threadId> <pr url>...  a PR's auto-fix wand, for that thread (experiment prHighlights)
+  tb pr-watch on|off <threadId> <pr url>...  a PR's auto-fix wand, for that thread
   tb pr-watch list [--json]          the PRs whose auto-fix wand is on
   tb panel <threadId> <panelId> [--json]  draws an image panel or fills a list panel now
   tb show-panel <threadId> <panel> [--reload] [--json]  opens a panel when the user looks at that thread (--reload: its page afresh)

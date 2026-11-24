@@ -527,7 +527,7 @@ fn repo_of(url: &str) -> Option<String> {
 // ---------------------------------------------------------------- status in Highlights
 
 /// What decides whether a thread's PR can merge, for Highlights' Pull
-/// requests (experiment prHighlights; the runner's `github.prStatus`).
+/// requests (the runner's `github.prStatus`).
 /// Ville followed his PRs in a patch panel and asked for them in Highlights
 /// itself (20 Nov 2026); the words and colours are that panel's.
 #[derive(Clone, Debug, PartialEq, Default, Deserialize)]

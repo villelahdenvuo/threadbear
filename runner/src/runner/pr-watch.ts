@@ -1,4 +1,4 @@
-// PR auto-fix's watch (pr-watch.ts; experiment prHighlights): kept in
+// PR auto-fix's watch (pr-watch.ts): kept in
 // <home>/pr-watch.json, looked at every minute while anything is watched,
 // and its messages and snoozes done here. Each method's `this` is the
 // Runner; runner.ts puts them on its prototype.
@@ -8,7 +8,6 @@ import path from 'node:path';
 import type { Runner } from '../runner.ts';
 import type { RunnerPart } from './part.ts';
 import { ErrorCode, RpcError } from '../protocol.ts';
-import { experimentOn } from '../experiments.ts';
 import { atomicWriteFileSync } from '../fsutil.ts';
 import { gh as realGh } from '../land-gate.ts';
 import { parsePrUrl } from '../github-pr.ts';
@@ -45,7 +44,6 @@ export const prWatchPart = {
   /** The wand: watch `urls` for `threadId`, or stop. Returns the PR URLs
    *  watched now, for any thread. */
   setPrWatch(this: Runner, threadId: string, urls: string[], on: boolean): { watched: string[] } {
-    if (!experimentOn(this.cfg.home, 'prHighlights')) throw new RpcError(ErrorCode.other, 'The prHighlights experiment is off.');
     this.mustGet(threadId);
     const state = this.prWatchState();
     for (const url of urls.slice(0, 50)) {
@@ -91,7 +89,6 @@ export const prWatchPart = {
     if (this.prWatchBusy) return;
     const state = this.prWatchState();
     if (!Object.keys(state).length) return;
-    if (!experimentOn(this.cfg.home, 'prHighlights')) return this.armPrWatch();
     this.prWatchBusy = true;
     try {
       const prs = await fetchWatched(Object.values(state).map((e) => e.url), this.prWatchGh ?? realGh);

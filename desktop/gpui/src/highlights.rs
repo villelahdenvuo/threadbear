@@ -2352,7 +2352,7 @@ impl SidePane {
         pr.render(p, cx).into_any_element()
     }
 
-    /// Pull requests (experiment prHighlights): the thread's PRs, open ones
+    /// Pull requests: the thread's PRs, open ones
     /// first as they came, each with what holds it up, and the merged and
     /// closed ones behind a row at the foot. Ville's PRs patch panel, in
     /// Highlights (20 Nov 2026).
@@ -2539,15 +2539,10 @@ impl SidePane {
                 .into_any_element();
         }
         // The first fetch is quick; a spinner would only flash.
-        let prs_on = self
-            .app
-            .upgrade()
-            .is_some_and(|app| crate::pr_view::status_on(app.read(cx)));
         let Some(sections) = self
             .highlights
             .get(&thread.id)
-            .map(HighlightSections::build)
-            .map(|s| if prs_on { s.split_prs() } else { s })
+            .map(|h| HighlightSections::build(h).split_prs())
         else {
             return div().size_full().into_any_element();
         };
@@ -3662,15 +3657,7 @@ impl SidePane {
         let Some(fetched) = self.highlights.get(&thread.id) else {
             return;
         };
-        let prs_on = self
-            .app
-            .upgrade()
-            .is_some_and(|app| crate::pr_view::status_on(app.read(cx)));
-        let sections = if prs_on {
-            HighlightSections::build(fetched).split_prs()
-        } else {
-            HighlightSections::build(fetched)
-        };
+        let sections = HighlightSections::build(fetched).split_prs();
         let projects = core::project_rows(thread, |id| self.projects.get(id).cloned());
         let scheduled = self.schedule_rows(thread, cx);
         let (clock, now) = (side::local_now(), now_ms());

@@ -76,7 +76,7 @@ pub struct Highlight {
     pub sha: Option<String>,
     pub branch: Option<String>,
     pub pushed: bool,
-    /// A PR's auto-fix wand is on (experiment prHighlights).
+    /// A PR's auto-fix wand is on.
     pub watched: bool,
     pub seq: i64,
     pub last_seq: i64,
@@ -401,7 +401,7 @@ pub struct HighlightSections {
     pub files: Vec<Highlight>,
     /// Links, and pull requests unless `split_prs` moved them to `prs`.
     pub links: Vec<Highlight>,
-    /// Pull requests (experiment prHighlights), after `split_prs`.
+    /// Pull requests, after `split_prs`.
     pub prs: Vec<Highlight>,
     /// GitHub Actions runs, newest first (experiment ciRuns).
     pub runs: Vec<CiRun>,
@@ -452,8 +452,7 @@ impl HighlightSections {
         out
     }
 
-    /// Pull requests under a heading of their own (experiment prHighlights),
-    /// and out of Links so none is listed twice. Pinned ones stay pinned.
+    /// Pull requests under a heading of their own, and out of Links so none is listed twice. Pinned ones stay pinned.
     pub fn split_prs(mut self) -> HighlightSections {
         let (prs, links): (Vec<Highlight>, Vec<Highlight>) = std::mem::take(&mut self.links)
             .into_iter()

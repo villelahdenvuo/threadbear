@@ -1104,10 +1104,9 @@ export class RpcServer {
         return ghCall(async () => ({ states: await prStates(p.urls as string[]) }));
       }
       // What decides whether each of a thread's PRs can merge, for
-      // Highlights' Pull requests (experiment prHighlights).
+      // Highlights' Pull requests.
       case 'github.prStatus': {
         if (!Array.isArray(p.urls) || p.urls.some((u) => typeof u !== 'string')) throw bad('urls must be an array of strings');
-        if (!experimentOn(r.cfg.home, 'prHighlights')) throw new RpcError(ErrorCode.other, 'The prHighlights experiment is off.');
         return ghCall(async () => ({ prs: await prStatus(p.urls as string[]) }));
       }
       // A PR's auto-fix wand (runner/pr-watch.ts).

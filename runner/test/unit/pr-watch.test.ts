@@ -116,7 +116,6 @@ async function until(ok: () => boolean, what: string): Promise<void> {
 
 test('a wand turned on in the runner sends the PR\'s problem to its thread and shows on its highlight', async () => {
   const home = tmpDir();
-  fs.writeFileSync(path.join(home, 'runner.json'), JSON.stringify({ experiments: { prHighlights: true } }));
   const h = makeHarness(home);
   const asked: string[] = [];
   h.runner.prWatchGh = async (args) => {

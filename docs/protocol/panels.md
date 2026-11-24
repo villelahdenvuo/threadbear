@@ -26,7 +26,7 @@ type Highlight = {
   pushed?: true         // commit: a later git push in the thread sent its branch
   pushedAt?: string     // commit: when that push was
   repo?: string         // commit: "owner/name", from the push's "To" line, on GitHub
-  watched?: true        // pr: its auto-fix wand is on (experiment prHighlights)
+  watched?: true        // pr: its auto-fix wand is on
   seq: number           // the event it was first seen in (a pin: lastSeq then)
   lastSeq: number       // the latest event that mentioned it
   at: string            // when it was first seen
@@ -364,7 +364,7 @@ shows the PR while its files are on their way. A runner older than that
 ignores `files` and answers `github.prFiles` with `-32601`, and the app
 keeps the files the first answer brought.
 
-With the `prHighlights` experiment, Highlights lists a thread's PRs (its
+Highlights lists a thread's PRs (its
 `pr` highlights that aren't pinned) under Pull requests, above Links, which
 no longer lists them. While that shows, the app asks `github.prStatus` for
 them: one `gh api graphql` call for up to 40 PRs, each answer kept 30

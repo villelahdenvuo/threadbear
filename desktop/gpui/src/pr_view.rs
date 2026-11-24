@@ -71,8 +71,7 @@ pub(crate) struct PrPanes {
     /// links already asked about (`github.prStates`).
     states: HashMap<String, PrState>,
     asked: std::collections::HashSet<String>,
-    /// Each PR's status for Highlights' Pull requests (experiment
-    /// prHighlights), with when it came, and the PRs being asked about.
+    /// Each PR's status for Highlights' Pull requests, with when it came, and the PRs being asked about.
     status: HashMap<String, (rules::PrStatus, i64)>,
     status_asking: std::collections::HashSet<String>,
     /// When `github.prStatus` last failed (gh missing or signed out): not
@@ -127,14 +126,6 @@ impl PrPanes {
 /// Whether PR links open here: the inlinePrs experiment, from `hello`.
 pub(crate) fn on(app: &crate::app::Threadbear) -> bool {
     app.remote.experiments.iter().any(|e| e == "inlinePrs")
-}
-
-/// Whether Highlights lists PRs under Pull requests with their status: the
-/// prHighlights experiment. Settings' switch first, as `hello`'s list is
-/// only read on connecting: turned on after that, the section stayed away
-/// until the app reconnected (Ville, 20 Nov 2026).
-pub(crate) fn status_on(app: &crate::app::Threadbear) -> bool {
-    app.experiment_on("prHighlights")
 }
 
 /// The canonical URL of a PR link, if it's one that opens here.

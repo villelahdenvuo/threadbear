@@ -331,7 +331,7 @@ export function forgetStates(ref: PrRef): void {
   statusCache.delete(`${repoArg(ref).toLowerCase()}#${ref.number}`);
 }
 
-// ---- Status for Highlights' Pull requests (experiment prHighlights) ----
+// ---- Status for Highlights' Pull requests ----
 // Each PR a thread has linked, made or pinned, with what decides whether it
 // can merge: CI, the review decision, a merge conflict and review threads
 // still open. Ville used a patch panel for this (~/.threadbear/patches/prs)

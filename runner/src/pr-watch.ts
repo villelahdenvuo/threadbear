@@ -1,4 +1,4 @@
-// PR auto-fix (experiment prHighlights; docs/protocol/panels.md, "Pull requests"):
+// PR auto-fix (docs/protocol/panels.md, "Pull requests"):
 // a PR's wand in Highlights watches it for its thread. Each look works out the
 // PR's problems as keys; a key the watch hasn't seen sends the thread a
 // message to fix it, keys that clear are forgotten (so a problem that comes
