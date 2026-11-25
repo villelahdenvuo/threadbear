@@ -615,10 +615,27 @@ runner_unit_tests() {
       return
     fi
   fi
+  # --quick (tb land's check) leaves out the slow tests of Threadbear's own
+  # tooling (landing, worktrees, check hosts, releases) when nothing they
+  # import or run changed (scripts/tooling-tests.mjs). The full check, --all
+  # and --only still run them. Each is minutes on a Mac with no check host.
+  local tooling_note=""
+  if [ "$QUICK" = 1 ] && [ "$ALL" = 0 ] && [ "$asked" = "${asked#*=}" ] && [ -n "$CHANGED" ] && [ -f "$ROOT/scripts/tooling-tests.mjs" ]; then
+    local skipping=() all_files=() t
+    printf '%s\n' "$CHANGED" >"$LOGS/changed-files.txt"
+    while IFS= read -r t; do [ -n "$t" ] && skipping+=("$t"); done < <("$NODE" "$ROOT/scripts/tooling-tests.mjs" "$LOGS/changed-files.txt" 2>/dev/null)
+    if [ "${#skipping[@]}" -gt 0 ]; then
+      while IFS= read -r t; do
+        case " ${skipping[*]} " in *" $t "*) ;; *) all_files+=("$t") ;; esac
+      done < <(cd "$dir" && find test/unit -name '*.test.ts' -type f | LC_ALL=C sort)
+      targets=("${all_files[@]}")
+      tooling_note="  (left out ${#skipping[@]} tooling test files: nothing they test changed)"
+    fi
+  fi
   # Test files that passed before with what they read now (their imports
   # and the files they and the scripts they run name, scripts/check-cache.mjs)
   # are left out, and the ones that run are recorded as they pass.
-  local keys="$LOGS/runner-unit-tests.keys" passed="$LOGS/runner-unit-tests.passed" note="" record=()
+  local keys="$LOGS/runner-unit-tests.keys" passed="$LOGS/runner-unit-tests.passed" note="$tooling_note" record=()
   if [ -n "$PASSES" ]; then
     local listed=() ran=() verdict key skipped=0
     if [ "${targets[0]}" = "test/unit/**/*.test.ts" ]; then
@@ -645,7 +662,7 @@ runner_unit_tests() {
       targets=("${ran[@]}")
       record=(--test-reporter=./test/helpers/passed-files-reporter.mjs --test-reporter-destination="$passed")
       if [ "$skipped" -gt 0 ]; then
-        note="  (skipped $skipped test files that passed with what they read now)"
+        note="$note  (skipped $skipped test files that passed with what they read now)"
         # Which ran, when that's few enough to read.
         [ "${#ran[@]}" -gt 20 ] || note="$note
         ran: ${ran[*]}"
