@@ -204,13 +204,23 @@ function indexTree(tree) {
   return { byBase, dirs };
 }
 
+// Another test file a file names (swift-freeze.sh pointing at the test that
+// covers it, a deploy step listing tests to run) counts as itself, but what
+// that test reads isn't followed: that made nearly every tooling test read
+// all of desktop/core through shared-cases.test.ts, so a desktop-only
+// landing reran about 50 of them (Ville, 25 Nov 2026).
+const NAMED_TEST = /\.test\.(ts|mts|mjs|js)$/;
+
 export function makeReader(root, tree) {
   const { byBase, dirs } = indexTree(tree);
   const memo = new Map();
+  const named = new Map();
   const direct = (file) => {
     if (memo.has(file)) return memo.get(file);
     const out = new Set();
+    const tests = new Set();
     memo.set(file, out);
+    named.set(file, tests);
     // The check's own files are in every key already, and this one names
     // folders all over.
     if (!runsAsProgram(file) || !tree.has(file) || CHECK_FILES.includes(file)) return out;
@@ -224,8 +234,9 @@ export function makeReader(root, tree) {
     // files each). From there only its imports count; from the tests' side
     // (tests, their helpers, the scripts they run) every name does.
     const testSide = TEST_SIDE.test(file);
-    const addFile = (f) => { if (testSide && tree.has(f)) out.add(f); };
-    const addDir = (d) => { if (testSide) for (const f of dirs.get(d) ?? []) out.add(f); };
+    const byName = (f) => (NAMED_TEST.test(f) ? tests : out).add(f);
+    const addFile = (f) => { if (testSide && tree.has(f)) byName(f); };
+    const addDir = (d) => { if (testSide) for (const f of dirs.get(d) ?? []) byName(f); };
     for (const m of text.matchAll(/['"`]([^'"`\s$<>{}*|,;:!?]{2,200})['"`]/g)) {
       let s = m[1];
       if (s.startsWith('./') || s.startsWith('../')) {
@@ -255,17 +266,21 @@ export function makeReader(root, tree) {
       for (const f of byBase.get(path.posix.basename(s)) ?? []) if (f === s || f.endsWith(`/${s}`) || s.endsWith(`/${f}`)) addFile(f);
     }
     out.delete(file);
+    tests.delete(file);
     return out;
   };
   const closure = (file) => {
     const seen = new Set();
+    const leaves = new Set();
     const todo = [file];
     while (todo.length) {
       const f = todo.pop();
       if (seen.has(f)) continue;
       seen.add(f);
       for (const g of direct(f)) if (!seen.has(g)) todo.push(g);
+      for (const g of named.get(f) ?? []) leaves.add(g);
     }
+    for (const g of leaves) seen.add(g);
     return seen;
   };
   return { direct, closure };

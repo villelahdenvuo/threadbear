@@ -125,6 +125,33 @@ test("a test file's key follows its imports and the files it names, and the test
   }
 });
 
+test("another test file a script names counts, but not what that test reads", () => {
+  const root = tmp('named');
+  try {
+    const put = writer(root);
+    put('runner/test/unit/land.test.ts', "const s = path.join(ROOT, 'scripts', 'freeze.sh');\n");
+    put('scripts/freeze.sh', '# covered by runner/test/unit/cases.test.ts\n');
+    put('runner/test/unit/cases.test.ts', "const roots = ['desktop/core'];\n");
+    put('desktop/core/src/terminal.rs', 'fn a() {}\n');
+    put('runner/test/helpers/clean-env.ts', '');
+    put('check.sh', '');
+    const files = ['test/unit/land.test.ts', 'test/unit/cases.test.ts'];
+    const keys = () => testKeys(root, treeOf(root), files) as Map<string, string>;
+    const before = keys();
+    const changed = (rel: string, text: string) => {
+      const old = fs.readFileSync(path.join(root, rel), 'utf8');
+      put(rel, text);
+      const after = keys();
+      put(rel, old);
+      return files.filter((f) => after.get(f) !== before.get(f));
+    };
+    assert.deepEqual(changed('desktop/core/src/terminal.rs', 'fn b() {}\n'), ['test/unit/cases.test.ts'], 'only the test that reads it');
+    assert.deepEqual(changed('runner/test/unit/cases.test.ts', '// x\n'), files, 'the named test itself still counts');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a type-only import isn't read: Node strips it before the test runs", () => {
   const root = tmp('types');
   try {
