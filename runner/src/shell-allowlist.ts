@@ -1996,7 +1996,8 @@ function gitNewEnough(): boolean {
     const m = /git version (\d+)\.(\d+)/.exec(execFileSync('git', ['--version'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 20_000 }).toString());
     ok = !!m && (Number(m[1]) > 2 || (Number(m[1]) === 2 && Number(m[2]) >= 31));
   } catch {
-    // Not cached: a git that was only slow (a busy Mac) is asked again next time.
+    // Not kept: a git that was only slow (a busy Mac) is asked again next
+    // time, rather than read as too old for ten minutes.
     return false;
   }
   gitVersion = { at: Date.now(), ok };

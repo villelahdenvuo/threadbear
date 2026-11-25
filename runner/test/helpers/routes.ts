@@ -12,6 +12,8 @@
 // rebuild of a card) shows as the routes disagreeing, not as a bug on Alex's
 // backend. Nothing here touches the network or a model, so it's as quick and
 // steady as a unit test.
+import fs from 'node:fs';
+import path from 'node:path';
 import { makeHarness } from './fakes.ts';
 import { call, load, memoryBackend } from './convex-memory.ts';
 import { ConvexSync } from '../../src/sync.ts';
@@ -42,7 +44,7 @@ export type View = {
   // ("Moved to ...", "... Carrying on at ..."), which the Mac keeps on show.
   notes: string[];
   // Each move between the inbox, hibernating and the archive, as
-  // "from>to", which the Mac and the phones draw as a divider (API 99).
+  // "from>to", which the Mac and the phones draw as a divider (API 100).
   moves: string[];
   // Whether the last turn failed (the Mac's failed card, the website's
   // "The last turn failed"): a signed-out login on bruce read as an empty
@@ -50,6 +52,9 @@ export type View = {
   failed: boolean;
   // The open approval card's line saying what made it ask.
   cardReason?: string;
+  // What it's waiting on (docs/protocol/needs-you.md, "Wait state"): the
+  // section, badge and order every app draws it with.
+  waitState?: string;
 };
 
 export type Play = {
@@ -82,6 +87,10 @@ export type Play = {
   move(u: { snoozedUntil?: string | null; archived?: boolean }): void;
   /** The agent's tool call asks, with the runner's reason and source, and the card stays open. */
   askApproval(req: { name: string; title: string; input: Record<string, unknown>; reason?: string; source?: ApprovalSource }): void;
+  /** The quiet inbox archives the finished thread, as Opus guessed it a skip (runner/inbox-guess.ts quietArchive, experiment quietInboxMine). */
+  quietlyArchived(why: string): void;
+  /** Alex brings it back with "Should have shown me" (threads.update's unarchive verdict). */
+  shouldHaveShown(): void;
 };
 
 export async function threeWays(play: (p: Play) => void | Promise<void>) {
@@ -145,7 +154,7 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
   const here = (): View => {
     const t = h.runner.get(id);
     const events = h.runner.events(id, {}).events as Record<string, any>[];
-    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), moves: movesOf(events), failed: lastFailed(events), cardReason: openCardReason(events) };
+    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), moves: movesOf(events), failed: lastFailed(events), cardReason: openCardReason(events), waitState: t.waitState };
   };
   let relayEvents: Record<string, any>[] = [];
   const viaRelay = async (): Promise<View> => {
@@ -159,12 +168,14 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
     // sidebar's list, for the done card's own seq.
     const listed = relay.overlay(remote()).threads.find((t) => t.threadId === id) as { looseEnds?: { seq: number; ends: { text: string }[] } } | undefined;
     const ends = listed?.looseEnds && end && listed.looseEnds.seq === end.seq ? listed.looseEnds.ends.map((e) => e.text) : [];
-    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), moves: movesOf(events), failed: lastFailed(events), cardReason: openCardReason(events) };
+    const indexed = ((await b.ctx.db.query('threadIndex').collect()) as unknown as { threadId: string; waitState?: string }[]).find((r) => r.threadId === id);
+    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events), waitState: indexed?.waitState };
+    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), moves: movesOf(events), failed: lastFailed(events), cardReason: openCardReason(events), waitState: indexed?.waitState };
   };
   const viaPhone = async (): Promise<View> => {
     const r = (await call(b.ctx, mods.phone.thread!, { token: TOKEN, threadId: id })) as { thread: Record<string, any>; messages: { role: 'user' | 'assistant'; text: string; origin?: string }[] };
     const page = await call(b.ctx, mods.phone.messages!, { token: TOKEN, threadId: id, notes: true }) as { messages: { role: string; text: string; plan?: boolean; planDecision?: string; move?: { from: string; to: string } }[] };
-    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: page.messages.filter((m) => m.plan).map((m) => `${m.text.split('\n')[0]} (${m.planDecision ?? 'waiting'})`), messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0, ...(m.origin ? { origin: m.origin } : {}) })), notes: page.messages.filter(m => m.role === 'note').map(m => m.text), moves: page.messages.flatMap((m) => (m.move ? [`${m.move.from}>${m.move.to}`] : [])), failed: r.thread.status === 'error', cardReason: r.thread.pendingApproval?.kind === 'approval' ? r.thread.pendingApproval.reason : undefined };
+    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: page.messages.filter((m) => m.plan).map((m) => `${m.text.split('\n')[0]} (${m.planDecision ?? 'waiting'})`), messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0, ...(m.origin ? { origin: m.origin } : {}) })), notes: page.messages.filter(m => m.role === 'note').map(m => m.text), moves: page.messages.flatMap((m) => (m.move ? [`${m.move.from}>${m.move.to}`] : [])), failed: r.thread.status === 'error', cardReason: r.thread.pendingApproval?.kind === 'approval' ? r.thread.pendingApproval.reason : undefined, waitState: r.thread.waitState };
   };
   const views = { here: here(), relay: await viaRelay(), phone: await viaPhone() };
   await sync.stop();
@@ -240,6 +251,16 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
       sendFromPhone: (text) => {
         h.runner.send(thread.id, text, [], { origin: 'phone' });
         h.adapter.last.init();
+      },
+      quietlyArchived: (why) => {
+        fs.writeFileSync(path.join(h.cfg.home, 'runner.json'), JSON.stringify({ experiments: { quietInboxMine: true } }));
+        const st = h.runner.threads.get(thread.id)!;
+        const seq = h.runner.looseEndsCard(st);
+        if (seq === undefined) throw new Error('quietlyArchived: the thread has no done card');
+        h.runner.quietArchive(st, seq, [{ by: 'claude-opus-5-5', skip: true, why, strong: true }]);
+      },
+      shouldHaveShown: () => {
+        h.runner.update({ threadId: thread.id, archived: false, verdict: 'shouldHaveShown' });
       },
       queuedReminder: (text, scheduleId) => {
         h.runner.send(thread.id, text, [], { origin: 'schedule', scheduleId, queue: true });

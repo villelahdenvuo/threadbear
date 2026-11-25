@@ -206,9 +206,9 @@ export type RelayRow = {
   pictures?: number;
   // The asks a user's message answered (API 89).
   answers?: AskAnswer[];
-  // A note's move between the inbox, hibernating and the archive, and why
-  // the runner sent its own message (API 99).
+  // A note's move between the inbox, hibernating and the archive (API 100).
   move?: { from: string; to: string; by: string };
+  // Why the runner sent its own message (API 98): its note's header.
   wakeReason?: string;
   at: string;
 };
@@ -460,7 +460,7 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
       // That runner's thread moved to another login, or is waiting for
       // room: the app keeps these on show (is_login_note in
       // desktop/core/src/reducer/row.rs). Saved-message notices come over too.
-      // A move (API 99) is drawn as the Mac's move divider.
+      // A move (API 100) is drawn as the Mac's move divider.
       const move = r.move && PLACES.has(r.move.from) && PLACES.has(r.move.to) ? { from: r.move.from, to: r.move.to, by: MOVERS.has(r.move.by) ? r.move.by : 'threadbear' } : undefined;
       out.push(env(base + 1, r, move ? { type: 'system.note', text: r.text, move } : { type: 'system.note', text: r.text, login: true }));
     } else if (r.role !== 'tool') {
@@ -730,7 +730,7 @@ export class Relay {
       lastSeenSeq: 0,
       runnerId: t.runnerId,
     };
-    for (const k of ['model', 'createdAt', 'lastActivityAt', 'snoozedUntil', 'archivedAt', 'starredAt', 'startedBy', 'asked', 'request', 'keywords'] as const) {
+    for (const k of ['model', 'createdAt', 'lastActivityAt', 'snoozedUntil', 'archivedAt', 'starredAt', 'startedBy', 'asked', 'keywords', 'waitState'] as const) {
       if (t[k] !== undefined) thread[k] = t[k];
     }
     // Its real access, or "unknown" from a runner that doesn't say: never
@@ -784,6 +784,9 @@ export class Relay {
       else t[k] = c.value === PUT_AWAY ? UNTIL_RESTART : c.value;
     }
     if (!kept.size) this.changed.delete(threadId);
+    // The row's state is from before the change: without it the app's own
+    // rule draws the change (Codex's review, 23 Nov).
+    else delete t.waitState;
     return t as T;
   }
 

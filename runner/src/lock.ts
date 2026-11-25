@@ -17,8 +17,10 @@ export type Lock = { release(): void };
 
 const UNREADABLE_GRACE_MS = 2000;
 
-export function acquireLock(runDir: string): Lock | { heldBy: number } {
-  const file = path.join(runDir, 'runner.pid');
+// `name` lets other jobs that must run one at a time across runners (the
+// Agent Archive build, agent-archive.ts) use the same kind of lock.
+export function acquireLock(runDir: string, name = 'runner.pid'): Lock | { heldBy: number } {
+  const file = path.join(runDir, name);
   // Where PowerShell can't give the start time on Windows, node's own clock does.
   const info = processInfo(process.pid);
   const me = { pid: process.pid, ...(info ? startOf(info) : { lstart: IS_WINDOWS ? ownStartTime() : '' }) };
@@ -56,7 +58,7 @@ export function acquireLock(runDir: string): Lock | { heldBy: number } {
   } finally {
     fs.rmSync(tmp, { force: true });
   }
-  throw new Error(`Couldn't take the runner lock at ${file}`);
+  throw new Error(`Couldn't take the lock at ${file}`);
 }
 
 type Holder = { pid: number; lstart?: string } & Started;

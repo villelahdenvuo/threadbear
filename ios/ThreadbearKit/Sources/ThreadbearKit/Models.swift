@@ -311,6 +311,13 @@ public struct PhoneThread: Codable, Sendable, Hashable, Identifiable {
     /// The thread's patch link buttons (backend API 28): pages the phone
     /// opens itself, as the Mac's url chips do there.
     public var links: [PhoneLink]?
+    /// Whether it's shared by link, and the link's slug (backend API 7).
+    /// Nil when it's never been shared.
+    public var share: ThreadShare?
+    /// What it's waiting on, as the runner works it out (`WaitState`; read
+    /// it through `wait`). Nil from a runner before 23 Nov 2026; a value
+    /// this build doesn't know is drawn as done.
+    public var waitState: String?
 
     public init(
         threadId: String, runnerId: String = "mac", title: String, cwd: String = "~/ThreadbearThreads",
@@ -321,8 +328,9 @@ public struct PhoneThread: Codable, Sendable, Hashable, Identifiable {
         pendingApproval: PendingApproval? = nil, earliestSeq: Double? = nil,
         asks: [PhoneAsk]? = nil, asksSeq: Double? = nil, next: [String]? = nil,
         needs: String? = nil, pendingReviews: Double? = nil, waitingForRoom: PhoneWaitingForRoom? = nil,
-        links: [PhoneLink]? = nil, asked: String? = nil, looseEnds: [PhoneLooseEnd]? = nil
+        links: [PhoneLink]? = nil, asked: String? = nil, looseEnds: [PhoneLooseEnd]? = nil, waitState: String? = nil
     ) {
+        self.waitState = waitState
         self.looseEnds = looseEnds
         self.asked = asked
         self.threadId = threadId
@@ -599,10 +607,11 @@ public struct PhoneMessage: Codable, Sendable, Hashable, Identifiable {
     /// the Mac does, the question small over the answer.
     public var answers: [AskAnswer]?
     /// On a note: the thread moving between the inbox, hibernating and the
-    /// archive (backend API 99), drawn as the Mac's move divider.
+    /// archive (backend API 100), drawn as the Mac's move divider.
     public var move: ThreadMove?
-    /// On the runner's own message: what made it send it ("The connection
-    /// came back", backend API 99), for the divider before the turn.
+    /// Why the runner sent its own message (origin "runner"), in a few
+    /// words: "Codex answered" (backend API 98). A turn it started gets
+    /// the divider "5 min later · Codex answered", as the Mac draws it.
     public var wakeReason: String?
     @FlexibleDate public var at: Date
 
@@ -960,12 +969,16 @@ public struct PhoneIdentity: Codable, Sendable, Hashable {
     /// The backend can't send notifications (a self-hosted one, which the
     /// push relay doesn't reach: docs/self-hosting.md). Missing means it can.
     public var pushOff: Bool?
+    /// The website's address, where a shared thread's link goes
+    /// (ThreadSharing.site). Missing from older backends.
+    public var site: String?
     public var sendsNotifications: Bool { pushOff != true }
-    public init(name: String, expiresAt: Date?, apiVersion: Int? = nil, pushOff: Bool? = nil) {
+    public init(name: String, expiresAt: Date?, apiVersion: Int? = nil, pushOff: Bool? = nil, site: String? = nil) {
         self.name = name
         self._expiresAt = OptionalFlexibleDate(wrappedValue: expiresAt)
         self.apiVersion = apiVersion
         self.pushOff = pushOff
+        self.site = site
     }
 }
 
@@ -1024,6 +1037,9 @@ public enum BackendCompatibility {
     /// From 27 threads can be starred (phone:update's `star`). Older backends
     /// would refuse it, so the phone doesn't offer it.
     public static let starsAPIVersion = 27
+    /// From 8 phone:share shares a thread by link (and thread rows carry
+    /// `share` from 7). Older backends don't have it, so the phone doesn't offer it.
+    public static let shareAPIVersion = 8
     /// From 35 a thread row's pendingApproval can be a secret card, answered
     /// sealed with phone:secret. An older backend has neither, so the phone
     /// says to answer it on the Mac.

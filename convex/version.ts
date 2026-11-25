@@ -469,19 +469,33 @@
 // 96: a threadIndex row (sync:setThreadIndex) takes `request`, Mike's first
 //    message to the thread as one line (docs/protocol/threads.md, "What Mike first
 //    asked"), for the Mac's Feed of another runner's threads. A runner sends
-//    it only to a backend of 96 or later.
+//    it only to a backend of 96 or later. The Feed was taken out on 23 Nov
+//    2026 and runners from then don't send it; the backend still takes it.
 // 97: an owned schedule can carry `provider`, with poolId: the kind of
 //    login a pool of several kinds starts its threads on, as the Mac's
 //    picker had it. A runner sends it only to a backend of 97 or later; an
 //    older runner starts the thread on the model's kind.
-// 98: a thread row's approval card can carry `reason`, what made it ask
+// 98: a runner's own message row (origin "runner") can carry `wakeReason`,
+//    why it sent it in a few words ("Codex answered"), and phone:messages,
+//    relay:remoteTail and relay:remoteMessages pass it on, so the phones,
+//    the website and another Mac head its quiet note as the Mac does ("Sent
+//    by the runner: codex answered"). A runner sends it only to a backend of
+//    98 or later.
+// 99: thread rows and threadIndex rows can carry `waitState`, what the
+//    thread is waiting on, worked out by its runner (docs/protocol/needs-you.md,
+//    "Wait state"), so the phone, the website and another Mac draw the same
+//    sections as the runner's own Mac. A thread waiting on its own work
+//    (onThreads, landing, appRestart) is in view "inbox" though hibernating.
+//    A runner sends it only to a backend of 99 or later. An older app ignores
+//    it, and leaves out those three, as it skips a hibernating inbox row.
+// 100: a thread row's approval card can carry `reason`, what made it ask
 //    (Auto's safety check, a file that runs as code, a patch Threadbear
 //    can't follow, a rule, an MCP tool), so the phone says why as the Mac
-//    does. A runner sends it only from 98.
-// 99: a message row can carry `move` ({ from, to, by }) on a note for a
-//    move between the inbox, hibernating and the archive, and `wakeReason`
-//    on the runner's own message; phone:messages and the relay pass them on,
-//    so the phones draw the Mac's move divider ("Hibernated by you", a moon,
-//    the time) and its "14 h later · The connection came back". A runner
-//    sends them only to a backend of 99 or later; an older phone ignores them.
-export const API_VERSION = 99;
+//    does; and a message row can carry `move` ({ from, to, by }) on a note
+//    for a move between the inbox, hibernating and the archive, which
+//    phone:messages and the relay pass on, so the phones draw the Mac's move
+//    divider ("Hibernated by you", a moon, the time). A runner sends them
+//    only to a backend of 100 or later; an older phone ignores them. (This
+//    copy's own change: it was 98 and 99 here before Mike's release took
+//    those numbers.)
+export const API_VERSION = 100;

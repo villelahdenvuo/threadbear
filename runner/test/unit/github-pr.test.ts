@@ -235,3 +235,8 @@ test('prStatus fails when gh answers nothing', async () => {
   const gh = fakeGh([], { 'api graphql': { ok: false, stdout: '', stderr: 'gh: To get started, run: gh auth login' } });
   await assert.rejects(prStatus(['https://github.com/acme/new/pull/1'], gh, 1000), /gh auth login/);
 });
+
+test('without gh installed, a read says to install it rather than spawn ENOENT', async () => {
+  const gh = fakeGh([], { 'pr view': { ok: false, stdout: '', stderr: 'spawn gh ENOENT' } });
+  await assert.rejects(fetchPr({ owner: 'acme', repo: 'app', number: 72 }, gh), /needs the gh command line tool/);
+});
