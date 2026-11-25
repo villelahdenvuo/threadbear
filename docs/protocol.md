@@ -51,7 +51,7 @@ It was all this one file once. Work made on that comes across by itself in `tb l
 | [moves.md](protocol/moves.md) | Moving a thread to another runner, Sync, Devices |
 | [keys.md](protocol/keys.md) | Runner keys, Virtual runners |
 | [boxes.md](protocol/boxes.md) | Box keys, Box mode |
-| [tools.md](protocol/tools.md) | Tools for agents |
+| [tools.md](protocol/tools.md) | Tools for agents, Waiting on workflow runs |
 <!-- /sections -->
 
 ## Ordering and reconnects

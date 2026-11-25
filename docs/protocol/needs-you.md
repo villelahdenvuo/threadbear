@@ -270,11 +270,7 @@ sub-agents above. `HELD_NUDGE` keeps the next turn from dropping the asks.
   its rows' `turn` (backend API 26); rows from before that read as one turn. From
   backend API 33 the first row of a wake-up carries `wokeBy` (its
   `turn.started`'s), and the phone draws the same "6 min later · Mine the repo
-  finished" divider as the Mac, timed from the rows either side. From
-  backend API 99 the runner's own message row carries its `wakeReason`, and
-  a turn it started gets the divider too: "14 h later · The connection came
-  back", or "Threadbear woke it" with none, unless a "Woke up" note came
-  since the last turn ended, as on the Mac. The
+  finished" divider as the Mac, timed from the rows either side. The
   `end_turn` description tells the agent that in such a turn its summary
   takes the place of the last one, so it covers everything since Mike's
   message, and its work links can quote steps from those turns (Mike,
@@ -679,25 +675,6 @@ sub-agents above. `HELD_NUDGE` keeps the next turn from dropping the asks.
   was found and what it did about each. A reviewer that gives no
   verdict (after the refusals) is handled as before: its reply goes
   across and nothing is enforced.
-- **Waiting on workflow runs.** `end_turn` also takes `waitForRuns?: true |
-  (string | { run, repo? })[]`, with `needs: "nothing"`: `true` for the
-  GitHub Actions runs the thread's own pushes, `gh workflow run` and
-  `gh run rerun` set off that are still watched (runner/ci-runs.ts), or up
-  to 5 runs by link (`https://github.com/o/r/actions/runs/<id>`), id, or
-  `{ run, repo: "owner/name" }`. The tool refuses an entry it can't read.
-  `waitFor` wins if both are given. Once the turn is over it hibernates
-  like `waitFor` (`snooze` the latest, else a day), with `waitingOnRuns`
-  (the watches' keys) in thread.json, `awaitingRuns: true` on its summary
-  and a `system.note` ("Hibernating until its GitHub workflows finish, or
-  <time> at the latest."). Each look at the runs checks the wait. Once
-  every awaited watch is done, it wakes ("Woke up …: its GitHub workflows
-  finished.", or "… failed") with a `user.message` (`origin: "runner"`)
-  listing each run as `- <workflow> (<branch>, <sha>): passed|failed|cancelled|skipped <url>`.
-  Runs still going when watching stops (2 hours) are listed with a line
-  to check them itself; a named run gh can't see three looks in a row, and
-  a push with no runs, are said. With nothing to wait on (`true` and no
-  open watch), it doesn't hibernate and gets a message saying so. A
-  starting runner looks again at every thread waiting this way.
 - **Waiting on threads.** `end_turn` also takes `waitFor?: string[]`, up
   to 5 thread ids (or unique prefixes) on this runner, with `needs:
   "nothing"`. Once the turn is over it hibernates on the same terms as

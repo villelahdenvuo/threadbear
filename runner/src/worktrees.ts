@@ -1930,13 +1930,6 @@ async function landLocked(
     } catch (e) {
       return fail(`Couldn't read the repo's patches for its check: ${(e as Error).message}`);
     }
-    // A branch that changes no file (an empty commit, one with only a
-    // Ports: trailer) has nothing a check could find: it lands without one.
-    // On 20 Nov one waited 25 minutes for a check of nothing.
-    if (check && (await git(t.path, ['diff', '--quiet', main, own])).ok) {
-      out(`${t.branch} changes no files, so it lands without the check.`);
-      check = undefined;
-    }
     // One that changes what format commands main runs (its --allow-format
     // covers only its own change) is checked and landed by itself, so no
     // other landing's change rides in under that yes (Gemini's third review).

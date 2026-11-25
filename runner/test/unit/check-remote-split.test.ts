@@ -170,14 +170,14 @@ test('check.sh --part runs just the Linux steps or just the Mac ones, which toge
     copy('scripts/limit-step.mjs');
     copy('runner/test/helpers/failed-files-reporter.mjs');
     put('runner/package.json', JSON.stringify({ scripts: { typecheck: 'true' } }));
-    put('runner/node_modules/.keep', '');
+    put('runner/node_modules/.package-lock.json', '{}');
     put('runner/test/helpers/clean-env.ts', '');
     put('runner/test/unit/ok.test.ts', "import { test } from 'node:test';\ntest('ok', () => {});\n");
     put('package.json', JSON.stringify({ scripts: { 'convex:typecheck': 'true', 'web:typecheck': 'true', 'web:test': 'true', lint: 'true', 'lint:files': 'true' } }));
-    put('node_modules/.keep', '');
+    put('node_modules/.package-lock.json', '{}');
     put('app/Tools/ok.mjs', '');
     put('mock-runner/ok.mjs', '');
-    put('mock-runner/node_modules/.keep', '');
+    put('mock-runner/node_modules/.package-lock.json', '{}');
     put('desktop/.keep', '');
     put('ios/ThreadbearKit/.keep', '');
     put('bin/swift', '#!/bin/bash\n', 0o755);

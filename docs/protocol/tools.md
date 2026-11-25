@@ -129,3 +129,25 @@ still gets the release this Mac runs now; a runner run from source, and any
 runner on Windows, gives its own `bin/`. Like every variable here, the
 value is from when the CLI started: `THREADBEAR_RUNNER_VERSION` is the
 version of the runner that started it, which may since have updated.
+
+### Waiting on workflow runs
+
+`end_turn` also takes `waitForRuns?: true |
+(string | { run, repo? })[]`, with `needs: "nothing"`: `true` for the
+GitHub Actions runs the thread's own pushes, `gh workflow run` and
+`gh run rerun` set off that are still watched (runner/ci-runs.ts), or up
+to 5 runs by link (`https://github.com/o/r/actions/runs/<id>`), id, or
+`{ run, repo: "owner/name" }`. The tool refuses an entry it can't read.
+`waitFor` wins if both are given. Once the turn is over it hibernates
+like `waitFor` (`snooze` the latest, else a day), with `waitingOnRuns`
+(the watches' keys) in thread.json, `awaitingRuns: true` on its summary
+and a `system.note` ("Hibernating until its GitHub workflows finish, or
+<time> at the latest."). Each look at the runs checks the wait. Once
+every awaited watch is done, it wakes ("Woke up …: its GitHub workflows
+finished.", or "… failed") with a `user.message` (`origin: "runner"`)
+listing each run as `- <workflow> (<branch>, <sha>): passed|failed|cancelled|skipped <url>`.
+Runs still going when watching stops (2 hours) are listed with a line
+to check them itself; a named run gh can't see three looks in a row, and
+a push with no runs, are said. With nothing to wait on (`true` and no
+open watch), it doesn't hibernate and gets a message saying so. A
+starting runner looks again at every thread waiting this way.

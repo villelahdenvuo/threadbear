@@ -931,10 +931,22 @@ pick_cargo() {
       [ -z "$r" ] || r="$(realpath "$r" 2>/dev/null || echo "$r")"
       if [ -n "$r" ] && [ -x "${r%/*}/cargo" ]; then r="${r%/*}/cargo"; else r=""; fi
     fi
+    # rustup's cargo is a proxy, and rustup 1.28 and later no longer puts the
+    # toolchain first on the PATH: `cargo clippy` then ran Homebrew's newer
+    # cargo-clippy (Ville, 25 Nov). So the pinned toolchain's own cargo, which
+    # toolchain_first puts first on the PATH.
+    local t=""
+    [ -z "$r" ] || [ ! -x "${r%/*}/rustup" ] || t="$(cd "$ROOT" && "${r%/*}/rustup" which cargo 2>/dev/null || true)"
+    if [ -n "$t" ] && [ -x "$t" ]; then echo "$t"; return; fi
     if [ -n "$r" ]; then echo "$r"; return; fi
     printf 'note  %s is cargo %s, not the %s rust-toolchain.toml pins, and there is no rustup: rustup.rs installs it\n' "$c" "$v" "$pin" >&2
   fi
   echo "$c"
+}
+# A rustup toolchain's cargo (pick_cargo) finds its clippy and rustfmt on the
+# PATH: its own folder goes first. It holds only Rust's tools, no node.
+toolchain_first() {
+  case "$1" in */toolchains/*/bin/cargo) PATH="${1%/*}:$PATH"; export PATH ;; esac
 }
 # desktop/'s Rust as cargo fmt writes it (desktop/rustfmt.toml, with the
 # rustfmt of rust-toolchain.toml), --quick included: no build, a few seconds,
@@ -942,6 +954,7 @@ pick_cargo() {
 if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ] && in_part "desktop format"; then
   if needed '^desktop/|^rust-toolchain\.toml$'; then
     FMT_CARGO="$(pick_cargo)"
+    toolchain_first "$FMT_CARGO"
     if [ -n "$FMT_CARGO" ]; then
       step "desktop format" "$ROOT/desktop" bash -c '"$1" fmt --all -- --check && exit 0
         printf "\ndesktop/ is not formatted as cargo fmt writes it (the diff is above).\nFix: cd desktop && cargo fmt --all, then commit what it changed.\n"
@@ -985,6 +998,7 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
     fi
   else
     CARGO="$(pick_cargo)"
+    toolchain_first "$CARGO"
     # On a Mac with no check host (anyone else's copy), each worktree built
     # desktop/ from cold in a target of its own: minutes a check and gigabytes
     # a worktree (Ville, 21 Nov). So these go through the shared targets a
