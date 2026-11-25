@@ -846,8 +846,7 @@ impl Threadbear {
                 let quiet = std::time::Duration::from_secs(u64::from(t.updater.quiet_minutes) * 60);
                 let ready = trying
                     || t.updater.retry_now
-                    || t
-                        .updater
+                    || t.updater
                         .quiet_main
                         .ready(&tree, std::time::Instant::now(), quiet);
                 // followMain can have changed while git was being read.

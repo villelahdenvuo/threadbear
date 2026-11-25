@@ -102,7 +102,6 @@ pasted (`Desktop only for now.` for all three) is left out of this table.
 | Who sent a message (see the origin rows) | `message.origin` | Yes | Yes | Yes |
 | Why the runner sent its message, on the divider before the turn it started | `message.wakeReason` | Yes | Yes | Yes |
 | The turn's summary reply, with the rest folded | `message.summary` | Yes | Yes | Yes |
-| Why the runner sent its message, on the divider before its turn | `message.wakeReason` | Yes | Yes | No: Not drawn yet. |
 | The user's answer to a design review | `message.reviewId` | Yes | Yes | No: Not drawn yet. |
 | A design review answer's picks and notes | `message.reviewResponse` | Yes | Yes | No: Not drawn yet. |
 | The user's answers to a card, each under its question | `message.answers` | Yes | No: Not drawn yet. | No: Not drawn yet. |

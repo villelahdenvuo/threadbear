@@ -236,7 +236,7 @@ import Testing
         let with = shown(Turns.fold(rows, busy: false))
         #expect(with.filter { !$0.hasPrefix("note:") } == without)
         #expect(with.last == "assistant:Landed.")
-        #expect(with.suffix(3).first == "note:\(moved)", "\(with)")
+        #expect(with.dropLast().last == "note:\(moved)")
     }
 
     /// The login ran out before the turn did anything, so the folded work
@@ -251,7 +251,7 @@ import Testing
             m(5, .tool, "Edited a file", at: 4, turn: "bbbb2222"),
             m(6, .assistant, "Fixed.", at: 9, turn: "bbbb2222"),
         ]
-        #expect(shown(Turns.fold(rows, busy: false)) == ["user:fix it", "worked", "assistant:You've hit your limit", "note:\(moved)", "gap", "assistant:Fixed."])
+        #expect(shown(Turns.fold(rows, busy: false)) == ["user:fix it", "worked", "assistant:You've hit your limit", "note:\(moved)", "assistant:Fixed."])
     }
 
     @Test func aThreadWaitingForRoomEndsOnItsNote() {

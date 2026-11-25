@@ -36,10 +36,11 @@ test('hibernating, waking, archiving and unarchiving by hand each leave one line
     { from: 'inbox', to: 'archived', by: 'mike' },
     { from: 'archived', to: 'inbox', by: 'mike' },
   ]);
-  assert.match(got[0].text, /^Hibernated by you until .+\.$/);
-  assert.equal(got[1].text, 'Woken by you after 2 hours.');
-  assert.equal(got[2].text, 'Archived by you.');
-  assert.equal(got[3].text, 'Unarchived by you.');
+  // Mike's wording (place-notes.ts) says when, as "on Mon 26 Oct, 2:00 pm".
+  assert.match(got[0].text, /^Hibernated by you on .+, until .+\.$/);
+  assert.match(got[1].text, /^Woken by you on .+\.$/);
+  assert.match(got[2].text, /^Archived by you on .+\.$/);
+  assert.match(got[3].text, /^Brought back from the archive by you on .+\.$/);
 });
 
 test('an update that changes nothing about where it is leaves no line', async () => {
@@ -62,7 +63,7 @@ test('a new wake time says so, and an agent archiving says it was an agent', asy
   const got = moves(h, thread.id);
   assert.match(got[1].text, /^Wake time changed by an agent to .+\.$/);
   assert.deepEqual(got[1].move, { from: 'hibernating', to: 'hibernating', by: 'agent', until: new Date(h.clock.now() + 2 * DAY).toISOString() });
-  assert.equal(got[2].text, 'Archived by an agent.');
+  assert.match(got[2].text, /^Archived by an agent on .+\.$/);
   assert.equal(got[2].move?.from, 'hibernating');
 });
 

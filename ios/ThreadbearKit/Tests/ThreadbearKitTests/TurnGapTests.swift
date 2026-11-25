@@ -53,19 +53,14 @@ import Testing
         #expect(!Turns.fold(old, busy: false).contains { if case .gap = $0 { true } else { false } })
     }
 
-    /// The Mac marks a turn the runner's message started too, with why it
-    /// sent it (a thread that hibernated for the app to restart sat 14 hours
-    /// under its last reply with nothing to say so, 19 Nov).
-    @Test func aTurnARunnerMessageStartedSaysWhy() {
-        var rows = [
+    @Test func aTurnARunnerMessageStartedHasNoDivider() {
+        let rows = [
             m(1, .user, "Fix it", at: 0, turn: "t1"),
             m(2, .assistant, "Merged; checking after the restart.", at: 10, turn: "t1"),
             m(3, .user, "The app has restarted.", at: 300, origin: "runner", turn: "t2"),
             m(4, .assistant, "It's live.", at: 320, turn: "t2"),
         ]
-        #expect(labels(Turns.fold(rows, busy: false)) == ["m1", "m3", "m2", "5 min later · Threadbear woke it", "m4"])
-        rows[2].wakeReason = "The Threadbear GPUI app restarted onto 1f103ac18"
-        #expect(labels(Turns.fold(rows, busy: true)).contains("5 min later · The Threadbear GPUI app restarted onto 1f103ac18"))
+        #expect(!Turns.fold(rows, busy: false).contains { if case .gap = $0 { true } else { false } })
     }
 
     @Test func aMoveAndAWakeReasonDecode() throws {

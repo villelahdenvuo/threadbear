@@ -41,7 +41,7 @@ class LoginNoteTest {
         val with = shown(Turns.fold(rows, busy = false))
         assertEquals(without, with.filter { !it.startsWith("note:") })
         assertEquals("assistant:Landed.", with.last())
-        assertEquals(listOf("note:$moved", "gap", "assistant:Landed."), with.takeLast(3))
+        assertEquals("note:$moved", with.dropLast(1).last())
     }
 
     /** The login ran out before the turn did anything: the note still goes under the limit's words. */
@@ -55,7 +55,7 @@ class LoginNoteTest {
             msg(6, ASSISTANT, "Fixed.", 9.0, turn = "bbbb2222"),
         )
         assertEquals(
-            listOf("user:fix it", "worked", "assistant:You've hit your limit", "note:$moved", "gap", "assistant:Fixed."),
+            listOf("user:fix it", "worked", "assistant:You've hit your limit", "note:$moved", "assistant:Fixed."),
             shown(Turns.fold(rows, busy = false)),
         )
     }

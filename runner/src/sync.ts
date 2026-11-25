@@ -1291,8 +1291,6 @@ export function toMessageDoc(threadId: string, e: PersistedEvent, scrub: (text: 
   const text = note ? (cut ? `${cut}\n\n${note}` : note) : cut;
   const doc: MessageDoc = { threadId, seq: e.seq, role: e.type === 'user.message' ? 'user' : 'assistant', text, ...turn, at: e.ts };
   if (e.type === 'user.message' && e.origin) doc.origin = e.origin;
-  // What made the runner send it, for the phone's "14 h later · ..." divider.
-  if (e.type === 'user.message' && e.origin === 'runner' && e.wakeReason?.trim()) doc.wakeReason = cutSafely(scrub(e.wakeReason).trim(), 200);
   // How many it came with, so another Mac's relay never counts them from
   // the words: a typed "[Picture 2]" isn't one, and the cut above can take
   // the only marker (Codex's review, 18 Nov).

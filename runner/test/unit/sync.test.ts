@@ -1836,7 +1836,7 @@ test("a woken turn's first message row says what finished, once the backend take
   }
 });
 
-test("a move's note row carries its move, and the runner's message its wakeReason, only to a backend of 99", async () => {
+test("a move's note row carries its move only to a backend that takes it, and the runner's message its wakeReason from 98", async () => {
   const base = { ts: '2026-11-23T00:00:00.000Z', threadId: 't' };
   const note = toMessageDoc('t', { ...base, seq: 5, type: 'system.note', text: 'Hibernated by you.', move: { from: 'inbox', to: 'hibernating', by: 'mike', until: '2026-11-24T09:00:00.000Z' } } as never)!;
   assert.deepEqual(note.move, { from: 'inbox', to: 'hibernating', by: 'mike' });
@@ -1852,7 +1852,7 @@ test("a move's note row carries its move, and the runner's message its wakeReaso
     await (sync as never as { appendMessages(m: MessageDoc[]): Promise<void> }).appendMessages([note, sent]);
     const rows = messagesSent(calls);
     assert.equal(rows.some((r) => 'move' in r), kept, `backend ${backend}`);
-    assert.equal(rows.some((r) => 'wakeReason' in r), kept, `backend ${backend}`);
+    assert.equal(rows.some((r) => 'wakeReason' in r), backend >= MESSAGE_WAKE_REASON_API_VERSION, `backend ${backend}`);
     await sync.stop();
   }
 });

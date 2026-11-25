@@ -129,7 +129,7 @@ class TurnsTest {
         val t = java.time.Instant.parse("2026-11-23T06:00:00Z")
         val gap = TurnGap(1, t, t.plusSeconds(3600), runnerWake = "The connection came back")
         assertEquals("1 h later · The connection came back", gap.label)
-        assertEquals("1 h later · Threadbear woke it", gap.copy(runnerWake = " ").label)
+        assertEquals("1 h later", gap.copy(runnerWake = " ").label)
         val note = parseJson("""{"seq":5,"role":"note","text":"Hibernated by you.","move":{"from":"inbox","to":"hibernating","by":"mike"},"at":"2026-11-23T06:23:14.000Z"}""") as JsonObject
         val row = PhoneMessage.read(note)
         assertEquals(ThreadMove("inbox", "hibernating", "mike"), row.move)
