@@ -233,6 +233,19 @@ test('a change to main is built and a restart asked for; the next check sees the
   assert.equal(h.deploys, 1);
 });
 
+test('disk is freed before each build, and a cleanup that throws does not stop it (disk-cleanup.ts)', async () => {
+  const buildsBefore: number[] = [];
+  const h: Harness = harness({}, {
+    beforeBuild: async () => {
+      buildsBefore.push(h.deploys);
+      throw new Error('no luck');
+    },
+  });
+  await h.u.check();
+  assert.deepEqual(buildsBefore, [0]);
+  assert.equal(h.deploys, 1);
+});
+
 test('a failed build or backend deploy goes to a fix thread instead of the notice, and to the notice when that fails', async () => {
   const failures: UpdateFailure[] = [];
   let handle: () => boolean = () => true;
