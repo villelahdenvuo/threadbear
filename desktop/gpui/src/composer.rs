@@ -896,9 +896,10 @@ impl Composer {
         cx.notify();
     }
 
-    /// A message that starts with `!` (and has no pictures, and isn't an
-    /// answer to an open card) runs as a command in the thread's Terminal,
-    /// which opens for it, and never goes to the agent. The box empties at
+    /// A message that starts with `!` (and has no pictures) runs as a command
+    /// in the thread's Terminal, which opens for it, and never goes to the
+    /// agent, even with a card of asks open: the card stays as it was, as a
+    /// `!` line is never an answer. The box empties at
     /// once; the words come back with a note when the shell can't take them.
     /// False when the message isn't one, so it sends as usual.
     fn run_bang_command(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
@@ -906,7 +907,7 @@ impl Composer {
         let Some(command) = threadbear_core::terminal::bang_command(&text) else {
             return false;
         };
-        if !images.is_empty() || self.open_card(cx).is_some_and(|c| !c.is_done()) {
+        if !images.is_empty() {
             return false;
         }
         let (Some(thread), Some(app)) = (self.thread_id.clone(), self.app.upgrade()) else {

@@ -1022,7 +1022,8 @@ agent. Type `!npm test` in the box and press Return: the Terminal opens,
 the command runs in the thread's shell, and the keyboard goes there. The
 agent never sees it. If the shell is busy, or another command waits there
 for Return, the command goes back in the box and a bar says why. It works
-in the same places the play icon does.
+in the same places the play icon does, and with a card of asks open too:
+the card stays as it was.
 
 A link in the Terminal (one a program prints, or a path you click) opens
 the way a link in a reply does: a web page in your browser, a document in
