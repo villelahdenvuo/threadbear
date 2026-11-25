@@ -134,7 +134,7 @@ export function lockHeldByOther(file: string): Promise<boolean | undefined> {
 // A rename under the lock, as lockHeldByOther probes it.
 export function moveUnderLock(lock: string, from: string, to: string): Promise<boolean> {
   const run: [string, string[]] | undefined =
-    process.platform === 'darwin' ? ['/usr/bin/lockf', ['-k', '-s', '-t', '0', lock, '/bin/mv', from, to]]
+    process.platform === 'darwin' ? ['/usr/bin/lockf', ['-k', '-s', '-t', '0', lock, 'mv', from, to]]
     : process.platform === 'linux' ? ['flock', ['-n', lock, 'mv', from, to]]
     : undefined;
   if (!run) return Promise.resolve(false);
