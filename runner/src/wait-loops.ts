@@ -38,6 +38,7 @@ export const WAIT_LOOP_REASON = [
   // A one-off (`when`) whose check prints nothing is skipped and done for
   // good, so the wait would be dropped (Codex's review, 18 Nov): cron only.
   `If it waits on something outside this turn (a merge or landing, CI, a deploy, another thread, a person, a time), don't run it. Call schedule_message with cron "*/5 * * * *" and \`check\` set to a command that prints only once it's ready, saying in the message what to do then and to delete the schedule; then end_turn with snooze. The thread hibernates and the check wakes it.`,
+  'For your own tb land, start it detached (nohup, output to a file) and end_turn with snooze "until it lands": Threadbear wakes the thread once its commits are on main.',
   `If it's a short wait you'll use within this turn (a server starting, a build you need next), add \`${SHORT_WAIT_MARK}\` at the end of the command and run it again.`,
 ].join(' ');
 
@@ -187,15 +188,15 @@ export function isWaitCommand(command: string, background = true): boolean {
 
 // The reason to refuse a call, or undefined when it's fine: only a Bash call
 // that waits (isWaitCommand), without the short-wait mark, in a thread on
-// Full access. Outside Full, schedule_message is a card, and one with a
-// check is the Mac's alone to allow (remoteCardShowsAll): Auto's card
-// reviewer never takes a schedule (NEVER_REVIEWED). Pointing the agent
-// there left a runner-started fix thread stuck on a card Ville couldn't
-// allow from his phone (25 Nov 2026). A background job that keeps the
-// thread awake is the lesser cost, so there it goes through.
+// Full access or Auto. In Ask, schedule_message with a check is a card only
+// the Mac can allow (remoteCardShowsAll): pointing the agent there left a
+// runner-started fix thread stuck on one Ville couldn't allow from his
+// phone (25 Nov 2026), so there a background job that keeps the thread
+// awake is the lesser cost. In Auto the card reviewer takes a thread's
+// schedule to wake itself (card-review.ts, neverReviewed).
 export function denyWaitLoop(tool: string, input: Record<string, unknown>, mode?: string): string | undefined {
   if (tool !== 'Bash') return undefined;
-  if (mode !== undefined && mode !== 'full') return undefined;
+  if (mode !== undefined && mode !== 'full' && mode !== 'auto') return undefined;
   const command = typeof input.command === 'string' ? input.command : '';
   if (command.toLowerCase().includes(SHORT_WAIT_MARK)) return undefined;
   return isWaitCommand(command, input.run_in_background === true) ? WAIT_LOOP_REASON : undefined;

@@ -152,6 +152,22 @@ test('cardReviewer: a card that hands out lasting access always goes to Alex', a
   assert.equal(h.events(id).filter((e) => e.type === 'approval.requested').length, 5);
 });
 
+test('cardReviewer: a thread\'s schedule to wake itself is reviewed; one for another thread, or with more on it, goes to Alex', async () => {
+  const h = setup();
+  const { id } = thread(h);
+  const own = { text: 'Main moved: carry on.', cron: '*/5 * * * *', threadId: id, check: 'git log -1 --format=%H main' };
+  const a = await h.runner.requestAgentApproval(id, { name: 'mcp__threadbear__schedule_message', title: 'Run a shell command as you before each run: git log -1 --format=%H main', input: own });
+  assert.equal(a.decision, 'allow');
+  assert.match(h.asked[0].system!, /wake itself/);
+  assert.match(h.asked[0].prompt, /git log -1/);
+  void h.runner.requestAgentApproval(id, { name: 'mcp__threadbear__schedule_message', title: 'Schedule a message to "Other"', input: { ...own, threadId: 'someone-else' } });
+  void h.runner.requestAgentApproval(id, { name: 'mcp__threadbear__schedule_message', title: 'Schedule new threads', input: { ...own, new_thread: true } });
+  void h.runner.requestAgentApproval(id, { name: 'mcp__threadbear__update_schedule', title: 'Change it', input: own });
+  await tick();
+  assert.equal(h.asked.length, 1);
+  assert.equal(h.events(id).filter((e) => e.type === 'approval.requested').length, 3);
+});
+
 test('cardReviewer: input too long to show whole goes to Alex unread', async () => {
   const h = setup();
   const { id, s } = thread(h);

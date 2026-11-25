@@ -647,8 +647,9 @@ class ClaudeSession implements AgentSession {
     return why ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: why } } : undefined;
   }
 
-  // A background shell that only waits (wait-loops.ts), on Full access: the
-  // reason's schedule_message is a card in any other mode (denyWaitLoop).
+  // A background shell that only waits (wait-loops.ts), on Full access and
+  // Auto: in Ask the reason's schedule_message is a card only the Mac can
+  // allow (denyWaitLoop).
   private onWaitLoop(input: HookInput): { hookSpecificOutput: { hookEventName: 'PreToolUse'; permissionDecision: 'deny'; permissionDecisionReason: string } } | undefined {
     const call = input as { tool_name?: string; tool_input?: unknown };
     if (typeof call.tool_name !== 'string' || !call.tool_input || typeof call.tool_input !== 'object') return undefined;

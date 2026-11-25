@@ -522,7 +522,9 @@ shown on the composer (the box you type in) and changed by clicking it.
   the card. Cards that hand out access lasting past the one action
   (switching a thread to more access, starting a thread with more, a
   schedule, moving a thread or changing its logins) always come to you, and
-  so do Codex threads' own tool cards.
+  so do Codex threads' own tool cards. One schedule is the exception: a
+  thread's timer to wake itself, which the reviewer judges by the shell
+  command it repeats while the thread sleeps.
 - **Plan first**: the agent looks around and writes a plan, but changes
   nothing yet. The plan shows as a card with Go ahead and Send back. Go
   ahead (or Return in an empty message box) lets it start, back in the mode

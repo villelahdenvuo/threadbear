@@ -952,16 +952,16 @@ test('Stop hook: a notice handed over with "Now write your reply" does not undo 
   state.close!();
 });
 
-test('a background wait loop is refused before it runs on Full access, goes on elsewhere, and a short wait or plain command goes on', async () => {
+test('a background wait loop is refused before it runs on Full access and Auto, goes on in Ask, and a short wait or plain command goes on', async () => {
   for (const mode of ['full', 'auto', 'ask'] as const) {
     const { state } = start([], { permissionMode: mode });
     const hook = state.options.hooks.PreToolUse[0].hooks[0];
     const call = (id: string, tool_input: Record<string, unknown>) => hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_use_id: id, tool_input });
     const refused = await call('w1', { command: 'until git merge-base --is-ancestor abc main; do sleep 60; done', run_in_background: true });
-    if (mode === 'full') {
+    if (mode !== 'ask') {
       assert.equal(refused.hookSpecificOutput?.permissionDecision, 'deny', mode);
       assert.match(refused.hookSpecificOutput.permissionDecisionReason, /schedule_message/);
-    } else assert.notEqual(refused?.hookSpecificOutput?.permissionDecision, 'deny', `${mode}: the schedule it would point to is a card`);
+    } else assert.notEqual(refused?.hookSpecificOutput?.permissionDecision, 'deny', `${mode}: the schedule it would point to is a card only the Mac can allow`);
     const short = await call('w2', { command: 'until curl -sf localhost:3000; do sleep 1; done # short wait', run_in_background: true });
     assert.notEqual(short?.hookSpecificOutput?.permissionDecision, 'deny', mode);
     const plain = await call('w3', { command: 'npm run dev', run_in_background: true });
