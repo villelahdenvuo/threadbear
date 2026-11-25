@@ -54,6 +54,12 @@ test('Bash calls that would wait past the turn are refused, and the short-wait m
   assert.equal(denyWaitLoop('Bash', { run_in_background: true }), undefined);
 });
 
+test('only a thread on Full access is refused: elsewhere the schedule it would need is a card the phone cannot allow', () => {
+  const loop = 'until curl -sf localhost:3000; do sleep 1; done';
+  assert.equal(denyWaitLoop('Bash', { command: loop, run_in_background: true }, 'full'), WAIT_LOOP_REASON);
+  for (const mode of ['auto', 'ask', 'plan']) assert.equal(denyWaitLoop('Bash', { command: loop, run_in_background: true }, mode), undefined, mode);
+});
+
 test('the reason names the way to wait instead', () => {
   assert.match(WAIT_LOOP_REASON, /schedule_message/);
   assert.match(WAIT_LOOP_REASON, /check/);

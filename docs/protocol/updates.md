@@ -654,7 +654,9 @@ merge to land, CI, another thread, a time) with a background shell that
 sleeps until it's there keeps its thread awake: on 17 Nov a "wait until
 this Mac's main has Ian's commit" loop sat for 40 minutes, and Hibernate
 asked to kill it. The Claude adapter's PreToolUse hook (wait-loops.ts)
-refuses such a call as it's made, in every mode: a Bash call with
+refuses such a call as it's made, on Full access only (elsewhere the
+`schedule_message` it points to is a card, and one with a check is the
+Mac's alone to allow, so a thread on Auto waited on the phone): a Bash call with
 `run_in_background` whose command has a `while`, `until` or `for` loop and a
 `sleep` from there on, a `sleep` of a minute or more by itself, or `gh run
 watch` / `gh pr checks --watch`; and a foreground one whose loop sleeps 30

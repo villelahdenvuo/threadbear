@@ -186,9 +186,16 @@ export function isWaitCommand(command: string, background = true): boolean {
 }
 
 // The reason to refuse a call, or undefined when it's fine: only a Bash call
-// that waits (isWaitCommand), without the short-wait mark.
-export function denyWaitLoop(tool: string, input: Record<string, unknown>): string | undefined {
+// that waits (isWaitCommand), without the short-wait mark, in a thread on
+// Full access. Outside Full, schedule_message is a card, and one with a
+// check is the Mac's alone to allow (remoteCardShowsAll): Auto's card
+// reviewer never takes a schedule (NEVER_REVIEWED). Pointing the agent
+// there left a runner-started fix thread stuck on a card Ville couldn't
+// allow from his phone (25 Nov 2026). A background job that keeps the
+// thread awake is the lesser cost, so there it goes through.
+export function denyWaitLoop(tool: string, input: Record<string, unknown>, mode?: string): string | undefined {
   if (tool !== 'Bash') return undefined;
+  if (mode !== undefined && mode !== 'full') return undefined;
   const command = typeof input.command === 'string' ? input.command : '';
   if (command.toLowerCase().includes(SHORT_WAIT_MARK)) return undefined;
   return isWaitCommand(command, input.run_in_background === true) ? WAIT_LOOP_REASON : undefined;
