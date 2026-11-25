@@ -17,8 +17,9 @@
 //   once it's been idle OPEN_IDLE_MS (OPEN_IDLE_LOW_MS when the disk is
 //   low). Never in a borrow, a folder switched by hand, or the main checkout.
 // - In the cache folder, update-desktop/target, check-desktop-target and
-//   ios-builds/<each>: once untouched for CACHE_AGE_MS, or at once when the
-//   disk is low.
+//   ios-builds/<each>, and check.sh's shared-<n> folders in
+//   ~/.cache/threadbear-check/local-builds (sharedBuilds): once untouched
+//   for CACHE_AGE_MS, or at once when the disk is low.
 //
 // Nothing is cleared while a process has its current folder in the
 // worktree, cargo holds the target's build lock, a build holds Threadbear's
@@ -75,12 +76,16 @@ export type CleanerDeps = {
   records: () => ThreadLike[];
   // Replaced in tests.
   cacheRoot?: string;
+  sharedBuildsRoot?: string;
   now?: () => number;
   freeBytes?: () => number | undefined;
   cwds?: () => Promise<string[] | undefined>;
   // Whether another process holds a lock file (flock); undefined when it
   // can't be told, which counts as held.
   lockHeld?: (file: string) => Promise<boolean | undefined>;
+  // Renames from to to while holding the lock file, without waiting; false
+  // when the lock is taken or the rename fails.
+  underLock?: (lock: string, from: string, to: string) => Promise<boolean>;
 };
 
 export type Cleared = { path: string; why: string };
@@ -89,6 +94,13 @@ export function defaultCacheRoot(): string {
   return process.platform === 'darwin'
     ? path.join(os.homedir(), 'Library', 'Caches', 'Threadbear')
     : path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'threadbear');
+}
+
+// check.sh's shared cargo folders on a Mac with no check host
+// (desktop/scripts/shared-cargo/cargo): shared-<n>/ (src and target), each
+// held by an flock on shared-<n>.lock for the whole build.
+export function defaultSharedBuildsRoot(): string {
+  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'threadbear-check', 'local-builds');
 }
 
 function statfsFree(dir: string): number | undefined {
@@ -116,6 +128,18 @@ export function lockHeldByOther(file: string): Promise<boolean | undefined> {
       // lockf: 75 (EX_TEMPFAIL); flock -n: 1. A missing tool can't tell.
       resolve(code === 'ENOENT' ? undefined : true);
     });
+  });
+}
+
+// A rename under the lock, as lockHeldByOther probes it.
+export function moveUnderLock(lock: string, from: string, to: string): Promise<boolean> {
+  const run: [string, string[]] | undefined =
+    process.platform === 'darwin' ? ['/usr/bin/lockf', ['-k', '-s', '-t', '0', lock, '/bin/mv', from, to]]
+    : process.platform === 'linux' ? ['flock', ['-n', lock, 'mv', from, to]]
+    : undefined;
+  if (!run) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    execFile(run[0], run[1], { timeout: 60_000 }, (err) => resolve(!err && !fs.existsSync(from)));
   });
 }
 
@@ -207,11 +231,13 @@ function holds(folders: Iterable<string>, dir: string): boolean {
 export class DiskCleaner {
   private running: Promise<Cleared[]> | undefined;
   private readonly cacheRoot: string;
+  private readonly sharedBuildsRoot: string;
   private readonly deps: CleanerDeps;
 
   constructor(deps: CleanerDeps) {
     this.deps = deps;
     this.cacheRoot = deps.cacheRoot ?? defaultCacheRoot();
+    this.sharedBuildsRoot = deps.sharedBuildsRoot ?? defaultSharedBuildsRoot();
   }
 
   private now(): number {
@@ -257,6 +283,7 @@ export class DiskCleaner {
       () => this.caches(low, cleared, ['ios-builds', 'update-desktop']),
       () => this.worktrees(low, cleared, 'open'),
       () => this.caches(low, cleared, ['check-desktop-target']),
+      () => this.sharedBuilds(low, cleared),
     ];
     for (const step of steps) {
       if (enough()) break;
@@ -412,6 +439,34 @@ export class DiskCleaner {
           if (isRealDir(d) && old(d) && this.now() - lastWritten(d) >= QUIET_MS) await this.clear(d, () => true, why, cleared);
         }
       }
+    }
+  }
+
+  // Each shared-<n> folder check.sh builds in, while its lock is free: the
+  // lock is held for a whole build, so a free one is a folder nobody builds
+  // in. The next check copies its src again and builds from cold.
+  private async sharedBuilds(low: boolean, cleared: Cleared[]): Promise<void> {
+    const root = this.sharedBuildsRoot;
+    if (!isRealDir(root)) return;
+    await this.leftovers(root);
+    const why = low ? 'the disk was low' : `unused for ${Math.round(CACHE_AGE_MS / DAY)} days`;
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(root).filter((n) => /^shared-\d+$/.test(n));
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      const dir = path.join(root, n);
+      if (!isRealDir(dir)) continue;
+      const age = this.now() - lastWritten(dir);
+      if (!(low || age >= CACHE_AGE_MS) || age < QUIET_MS) continue;
+      if ((await this.lockHeld(`${dir}.lock`)) !== false) continue;
+      // Moved aside holding its lock, so no build can take it in between.
+      const aside = path.join(root, `${CLEARING}${n}-${this.now()}`);
+      if (!(await (this.deps.underLock ?? moveUnderLock)(`${dir}.lock`, dir, aside))) continue;
+      cleared.push({ path: dir, why });
+      await fs.promises.rm(aside, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 

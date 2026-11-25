@@ -379,7 +379,9 @@ File references are where to look.
   open thread's after two idle days. In `~/Library/Caches/Threadbear`
   (`~/.cache/threadbear` on Linux) it is `update-desktop/target`,
   `check-desktop-target` and each folder in `ios-builds` (not `appstore`),
-  once unused for a week. Every ten minutes and before each runner update
+  and each `shared-<n>` build folder in
+  `~/.cache/threadbear-check/local-builds` while its lock is free (moved
+  aside holding it), once unused for a week. Every ten minutes and before each runner update
   build it reads the free space on your home folder's disk; under 10 GB,
   it deletes all of these that aren't in use, open threads idle for two
   hours included, until 20 GB is free. It skips anything a process has its

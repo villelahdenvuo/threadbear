@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { DiskCleaner, findBuildFolders, lockHeldByOther, LOW_FREE_BYTES, type CleanerDeps, type ThreadLike } from '../../src/disk-cleanup.ts';
+import { DiskCleaner, findBuildFolders, lockHeldByOther, LOW_FREE_BYTES, moveUnderLock, type CleanerDeps, type ThreadLike } from '../../src/disk-cleanup.ts';
 import { nullLogger } from '../../src/log.ts';
 import { tmpDir } from '../helpers/fakes.ts';
 import { commit, makeRepo, sh } from '../helpers/worktrees-harness.ts';
@@ -58,6 +58,8 @@ function cleaner(records: ThreadLike[], o: Partial<CleanerDeps> = {}): DiskClean
     on: () => true,
     records: () => records,
     cacheRoot: tmpDir('tb-disk-cache-'),
+    // Never the real ~/.cache/threadbear-check/local-builds.
+    sharedBuildsRoot: tmpDir('tb-disk-shared-'),
     freeBytes: () => 100 * LOW_FREE_BYTES,
     cwds: async () => [],
     lockHeld: async () => false,
@@ -176,6 +178,62 @@ test('build caches go after a week unused, or at once when the disk is low, but 
   assert.deepEqual(low.map((c) => path.relative(busy, c.path)), ['check-desktop-target']);
   assert.ok(fs.existsSync(path.join(busy, 'update-desktop', 'target')));
   assert.ok(fs.existsSync(path.join(busy, 'ios-builds', 'dd-device')));
+});
+
+test("check.sh's shared build folders go once unused for a week, or at once when the disk is low, never while a build holds one", async () => {
+  const mk = (ages: Record<string, number>) => {
+    const root = tmpDir('tb-disk-shared-');
+    for (const [n, age] of Object.entries(ages)) {
+      fs.mkdirSync(path.join(root, n, 'src'), { recursive: true });
+      target(path.join(root, n, 'target'), age);
+      const t = new Date(Date.now() - age);
+      for (const p of [`${n}/src`, n]) fs.utimesSync(path.join(root, p), t, t);
+      fs.writeFileSync(path.join(root, `${n}.lock`), '');
+    }
+    return root;
+  };
+  const moved: string[] = [];
+  const underLock = async (_lock: string, from: string, to: string) => {
+    fs.renameSync(from, to);
+    moved.push(path.basename(from));
+    return true;
+  };
+  // A week and a day unused goes; two days stays.
+  const root = mk({ 'shared-1': 8 * DAY, 'shared-2': 2 * DAY });
+  const cleared = await cleaner([], { sharedBuildsRoot: root, underLock }).sweep('hourly');
+  assert.deepEqual(cleared.map((c) => path.relative(root, c.path)), ['shared-1']);
+  assert.deepEqual(fs.readdirSync(root).filter((n) => !n.endsWith('.lock')).sort(), ['shared-2']);
+  // Low disk: two days old goes too, but not one whose lock a build holds,
+  // nor one written in the last minutes.
+  const busy = mk({ 'shared-1': 2 * DAY, 'shared-2': 2 * DAY, 'shared-3': 0 });
+  moved.length = 0;
+  const low = await cleaner([], { sharedBuildsRoot: busy, underLock, freeBytes: () => LOW_FREE_BYTES - 1, lockHeld: async (f) => f.endsWith('shared-2.lock') }).sweep('low disk');
+  assert.deepEqual(low.map((c) => path.relative(busy, c.path)), ['shared-1']);
+  assert.deepEqual(moved, ['shared-1']);
+  assert.ok(fs.existsSync(path.join(busy, 'shared-2', 'target')));
+  assert.ok(fs.existsSync(path.join(busy, 'shared-3', 'target')));
+});
+
+nodeTest('a shared build folder is moved aside only while its lock is free', { skip: process.platform !== 'darwin' && process.platform !== 'linux' }, async () => {
+  const root = tmpDir('tb-disk-lock-');
+  const dir = path.join(root, 'shared-1');
+  fs.mkdirSync(dir);
+  const lock = `${dir}.lock`;
+  fs.writeFileSync(lock, '');
+  // A build holding the lock, as shared-cargo does for its whole run.
+  const holder = spawn(process.platform === 'darwin' ? '/usr/bin/lockf' : 'flock', process.platform === 'darwin' ? ['-k', lock, 'sleep', '30'] : [lock, 'sleep', '30'], { stdio: 'ignore' });
+  try {
+    const deadline = Date.now() + 10_000;
+    while ((await lockHeldByOther(lock)) !== true && Date.now() < deadline) await new Promise((r) => setImmediate(r));
+    assert.equal(await moveUnderLock(lock, dir, path.join(root, 'aside')), false);
+    assert.ok(fs.existsSync(dir));
+  } finally {
+    holder.kill();
+  }
+  const deadline = Date.now() + 10_000;
+  while ((await lockHeldByOther(lock)) !== false && Date.now() < deadline) await new Promise((r) => setImmediate(r));
+  assert.equal(await moveUnderLock(lock, dir, path.join(root, 'aside')), true);
+  assert.ok(!fs.existsSync(dir) && fs.existsSync(path.join(root, 'aside')));
 });
 
 test('off, or not the real data dir: nothing happens', async () => {
