@@ -105,7 +105,7 @@ function statfsFree(dir: string): number | undefined {
 export function lockHeldByOther(file: string): Promise<boolean | undefined> {
   if (!fs.existsSync(file)) return Promise.resolve(false);
   const probe: [string, string[]] | undefined =
-    fs.existsSync('/usr/bin/lockf') ? ['/usr/bin/lockf', ['-k', '-s', '-t', '0', file, 'true']]
+    process.platform === 'darwin' ? ['/usr/bin/lockf', ['-k', '-s', '-t', '0', file, 'true']]
     : process.platform === 'linux' ? ['flock', ['-n', file, 'true']]
     : undefined;
   if (!probe) return Promise.resolve(undefined);
