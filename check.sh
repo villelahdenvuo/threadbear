@@ -847,6 +847,17 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
 fi
 if [ "$APP_ONLY" = 0 ]; then
   runner_unit_tests
+  # The tests that check what the docs say (runner/test/docs: AGENTS.md's
+  # size, protocol citations, the generated docs, the forking list, the
+  # site's search). A step of their own, so a doc edit runs these few and
+  # no unit test that only names a doc (Ville, 26 Nov 2026). They read
+  # docs and the code that writes them: a few seconds.
+  if needed '\.md$|^runner/|^scripts/|^site/|^convex/'; then
+    step "docs checks" "$ROOT/runner" node --import=./test/helpers/clean-env.ts --test --test-reporter=spec \
+      --test-timeout=300000 --test-force-exit "test/docs/**/*.test.ts"
+  else
+    skip "docs checks" "no doc or code they check changed"
+  fi
   if [ "$QUICK" = 0 ]; then
     if needed '^runner/(scripts/|launch\.mjs$|launcher/|test/deploy/)'; then
       step "runner deploy tests" "$ROOT/runner" bash test/deploy/run.sh

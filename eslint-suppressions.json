@@ -521,7 +521,7 @@
       "count": 2
     }
   },
-  "runner/test/unit/docs-search.test.ts": {
+  "runner/test/docs/docs-search.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
     }

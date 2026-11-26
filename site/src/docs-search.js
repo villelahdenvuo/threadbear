@@ -10,7 +10,7 @@
 // browsers only follow from a real click, not the Enter key's.
 //
 // The search itself (search, parts, href, nth) is plain functions with no DOM, so
-// runner/test/unit/docs-search.test.ts can run it in node; the box is wired up only in a browser.
+// runner/test/docs/docs-search.test.ts can run it in node; the box is wired up only in a browser.
 
 /** The query as lower-case words. */
 export const terms = (query) => query.toLowerCase().split(/\s+/).filter(Boolean);

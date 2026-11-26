@@ -130,7 +130,7 @@ export function rewrite(text, map, root) {
 }
 
 // Files that cite it as examples, in their tests of the split itself.
-const SELF = ['runner/test/unit/format-tool.test.ts', 'runner/test/unit/protocol-split.test.ts', 'runner/test/unit/protocol-citations.test.ts', 'scripts/protocol-citations.mjs', 'scripts/split-protocol.mjs'];
+const SELF = ['runner/test/unit/format-tool.test.ts', 'runner/test/docs/protocol-split.test.ts', 'runner/test/docs/protocol-citations.test.ts', 'scripts/protocol-citations.mjs', 'scripts/split-protocol.mjs'];
 
 // Tracked text files that might cite it: not the protocol itself, not
 // pictures or lock files, and not the frozen Swift app (scripts/

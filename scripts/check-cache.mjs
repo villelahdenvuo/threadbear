@@ -55,16 +55,7 @@ const blob = (buf) => crypto.createHash('sha1').update(`blob ${buf.length}\0`).u
 
 // ---- the checkout's files ---------------------------------------------------
 
-// Files the app's code names only to check they're there or to pass their
-// path on, never reading what they hold, by the code file that names them.
-// threadbear-mcp.ts, which nearly every test imports, builds the guide's
-// path for the agents' instructions: counting the guide's text made a
-// one-line guide edit rerun 288 of 389 test files (Ville, 26 Nov 2026).
-// Tests that read one (threadbear-tools.test.ts) still name it themselves.
-const EXISTS_ONLY = new Map([
-  ['runner/src/threadbear-mcp.ts', ['docs/guide.md', 'docs/protocol/patches.md']],
-]);
-const SKIP_DIRS =new Set(['node_modules', '.git', '.build', 'target', '.fixtures', 'dist', '.swiftpm']);
+const SKIP_DIRS = new Set(['node_modules', '.git', '.build', 'target', '.fixtures', 'dist', '.swiftpm']);
 
 // "<git mode>-<blob id>": what it holds and how, as git has it, so making a
 // script not executable, or a link a plain file holding its target, is a
@@ -166,7 +157,9 @@ const STEPS = [
   // .check-left-out: the pictures a check host's copy leaves out, which
   // the build takes as there.
   [/^site build$/, under('site/', 'docs/guide.md', 'docs/experiments.md', '.check-left-out')],
-  [/^feature/, (f) => under('features/', 'docs/gpui-port/', 'desktop/scripts/')(f) || rootConfig(f)],
+  // The docs checks read the docs and the code that writes or reads them.
+  [/^docs checks$/, (f) => f.endsWith('.md') || code(f)],
+  [/^feature/,(f) => under('features/', 'docs/gpui-port/', 'desktop/scripts/')(f) || rootConfig(f)],
   [/^desktop /, under('desktop/', 'rust-toolchain.toml', 'features/support/', 'site/app-doc-slugs.json', 'mock-runner/', 'runner/src/',
     'runner/package.json', 'runner/package-lock.json', 'shared/')],
   // app/ links to the iPhone kit's Swift files; its tests start the mock
@@ -362,12 +355,13 @@ export function makeReader(root, tree) {
     const rank = { leaf: 0, code: 1, test: 2 };
     const addFile = (f, how = 'name') => {
       if (!tree.has(f) || f === file) return;
-      if (!testSide && EXISTS_ONLY.get(file)?.includes(f)) return;
       const m = as(f, how);
       const had = out.get(f);
       if (had && rank[had] >= rank[m]) return;
       out.set(f, m);
-      if (testSide && !had && !runsAsProgram(f)) named(f, out);
+      // (Not the names in a doc: a test that reads one reads what it says,
+      // not every file it points to.)
+      if (testSide && !had && !runsAsProgram(f) && !f.endsWith('.md')) named(f, out);
     };
     // Not a folder the file is in (join(import.meta.dirname, '..') is
     // where it starts from, not what it reads), nor the checkout's top.
@@ -383,6 +377,15 @@ export function makeReader(root, tree) {
       const how = inJoin ? 'run' : 'name';
       s = s.replace(/^(\.\.?\/)+/, '').replace(/\/+$/, '');
       if (!s || s.startsWith('/')) return;
+      // A doc (.md) counts for a test only when the test's side names it,
+      // or the code reads the folder it's in or a file beside itself. The
+      // app's code names docs by path all over, to point an agent or a
+      // person at them, and threadbear-mcp.ts, which nearly every test
+      // imports, builds the guide's path: counting that made a one-line
+      // guide edit rerun about 240 of 389 test files (Ville, 26 Nov 2026:
+      // "MD file change triggering unit tests is insanity unless it's
+      // actually testing the content").
+      if (!testSide && s.endsWith('.md')) return;
       const base = path.posix.basename(s);
       if (s.includes('/')) {
         for (const f of byBase.get(base) ?? []) if (f === s || f.endsWith(`/${s}`)) addFile(f, how);
@@ -479,7 +482,10 @@ export function makeReader(root, tree) {
       seen.set(f, m);
       for (const [g, gm] of direct(f, m)) if (!seen.has(g) || rank[seen.get(g)] < rank[gm]) todo.push([g, gm]);
     }
-    const out = new Set(all ? tree.keys() : seen.keys());
+    // A test that reads the whole checkout (git grep, a copy of it) counts
+    // every file but the docs it doesn't name: what a doc says changes no
+    // test of landing, worktrees or checks (Ville, 26 Nov 2026).
+    const out = new Set(all ? [...tree.keys()].filter((f) => seen.has(f) || !f.endsWith('.md')) : seen.keys());
     // Node reads the package.json beside a module and in each folder above
     // it for its "type" (android-push's relay/package.json), and esbuild the
     // tsconfig.json (site-no-frames bundles convex/http.ts): those that are

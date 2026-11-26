@@ -318,9 +318,12 @@ test("a test file's key holds what the app's code reads at run time, and what a 
     };
     // (Both of these read everything.)
     const grep = ['test/unit/grep.test.ts', 'test/unit/hand.test.ts'];
-    assert.deepEqual(changed('runner/src/experiments/a.md', 'b\n'), ['test/unit/app.test.ts', ...grep], 'a folder beside the code');
-    assert.deepEqual(changed('runner/src/experiments/new.md', 'n\n'), ['test/unit/app.test.ts', ...grep], 'a new file in it');
-    assert.deepEqual(changed('docs/guide.md', '# new\n'), ['test/unit/app.test.ts', ...grep], 'a path the code joins, but not one threadbear-mcp.ts only checks is there');
+    // (Docs aside: what a doc says counts only for a test that names it or
+    // code that reads its folder.)
+    assert.deepEqual(changed('runner/src/experiments/a.md', 'b\n'), ['test/unit/app.test.ts'], 'a folder beside the code');
+    assert.deepEqual(changed('runner/src/experiments/new.md', 'n\n'), ['test/unit/app.test.ts'], 'a new file in it');
+    assert.deepEqual(changed('docs/guide.md', '# new\n'), [], "a doc the app's code names by path counts for no test that doesn't name it");
+    assert.deepEqual(changed('runner/src/x.txt', 'x\n'), grep, 'a file that is not a doc still counts for the whole-checkout tests');
     assert.deepEqual(changed('runner/src/child-dep.ts', 'export const x = 2;\n'), ['test/unit/app.test.ts', ...grep], "a script it starts, and that script's imports");
     assert.deepEqual(changed('relay/convex/b.ts', 'x\n'), ['test/unit/walk.test.ts', 'test/unit/names.test.ts', ...grep], 'a folder named in a list');
     assert.deepEqual(changed('convex/c.ts', 'x\n'), ['test/unit/walk.test.ts', ...grep], 'a new file in a folder named bare in a list');

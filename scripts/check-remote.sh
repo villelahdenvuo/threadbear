@@ -570,7 +570,7 @@ if [ "$RUNNER_ONLY" = 1 ] && [ -z "$SHOTS" ]; then linux_ok=1; fi
 # and with --only it only forces the steps named (Codex's review, 17 Nov).
 # check.sh --part reads this line too (keep it one line, in single quotes):
 # its Linux half runs exactly these, its Mac half the rest.
-LINUX_STEPS='^(runner typecheck|app tools parse|convex typecheck|web typecheck|web tests|lint|site build|feature pairing|features typecheck|runner unit tests|desktop format|desktop lint|desktop core tests|desktop app check|desktop app check \(as installed\)|[a-z ]+ packages)$'
+LINUX_STEPS='^(runner typecheck|app tools parse|convex typecheck|web typecheck|web tests|lint|site build|feature pairing|docs checks|features typecheck|runner unit tests|desktop format|desktop lint|desktop core tests|desktop app check|desktop app check \(as installed\)|[a-z ]+ packages)$'
 if [ -n "$ONLY" ] && [ "$QUICK" = 1 ] && [ -z "$SHOTS" ]; then
   linux_ok=1
   only_rest="$ONLY;"
