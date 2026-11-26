@@ -55,7 +55,16 @@ const blob = (buf) => crypto.createHash('sha1').update(`blob ${buf.length}\0`).u
 
 // ---- the checkout's files ---------------------------------------------------
 
-const SKIP_DIRS = new Set(['node_modules', '.git', '.build', 'target', '.fixtures', 'dist', '.swiftpm']);
+// Files the app's code names only to check they're there or to pass their
+// path on, never reading what they hold, by the code file that names them.
+// threadbear-mcp.ts, which nearly every test imports, builds the guide's
+// path for the agents' instructions: counting the guide's text made a
+// one-line guide edit rerun 288 of 389 test files (Ville, 26 Nov 2026).
+// Tests that read one (threadbear-tools.test.ts) still name it themselves.
+const EXISTS_ONLY = new Map([
+  ['runner/src/threadbear-mcp.ts', ['docs/guide.md', 'docs/protocol/patches.md']],
+]);
+const SKIP_DIRS =new Set(['node_modules', '.git', '.build', 'target', '.fixtures', 'dist', '.swiftpm']);
 
 // "<git mode>-<blob id>": what it holds and how, as git has it, so making a
 // script not executable, or a link a plain file holding its target, is a
@@ -353,6 +362,7 @@ export function makeReader(root, tree) {
     const rank = { leaf: 0, code: 1, test: 2 };
     const addFile = (f, how = 'name') => {
       if (!tree.has(f) || f === file) return;
+      if (!testSide && EXISTS_ONLY.get(file)?.includes(f)) return;
       const m = as(f, how);
       const had = out.get(f);
       if (had && rank[had] >= rank[m]) return;

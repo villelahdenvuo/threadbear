@@ -274,6 +274,10 @@ test("a test file's key holds what the app's code reads at run time, and what a 
     put('runner/src/patch-child.ts', "import { x } from './child-dep.ts';\n");
     put('runner/src/child-dep.ts', 'export const x = 1;\n');
     put('runner/test/unit/app.test.ts', "import '../../src/experiments.ts';\nimport '../../src/guide.ts';\nimport '../../src/patches.ts';\n");
+    // threadbear-mcp.ts only builds the guide's path and checks it's there:
+    // its text isn't in the key of every test that imports it.
+    put('runner/src/threadbear-mcp.ts', "export const guidePath = () => path.join(repo, 'docs', 'guide.md');\n");
+    put('runner/test/unit/mcp.test.ts', "import '../../src/threadbear-mcp.ts';\n");
     // Folders a test goes through by name, and the one it joins a made-up
     // name to.
     put('runner/test/unit/walk.test.ts', "for (const dir of ['convex', 'relay/convex']) readdirSync(join(root, dir));\nfor (const c of ['core']) walk(path.join(root, 'desktop', c));\n");
@@ -302,7 +306,7 @@ test("a test file's key holds what the app's code reads at run time, and what a 
     put('convex/_generated/server.js', 'export {};\n');
     put('runner/test/helpers/clean-env.ts', '');
     put('check.sh', '');
-    const files = ['test/unit/app.test.ts', 'test/unit/walk.test.ts', 'test/unit/guard.test.ts', 'test/unit/names.test.ts', 'test/unit/grep.test.ts', 'test/unit/hand.test.ts', 'test/unit/bundle.test.ts'];
+    const files = ['test/unit/mcp.test.ts', 'test/unit/app.test.ts', 'test/unit/walk.test.ts', 'test/unit/guard.test.ts', 'test/unit/names.test.ts', 'test/unit/grep.test.ts', 'test/unit/hand.test.ts', 'test/unit/bundle.test.ts'];
     const keys = () => testKeys(root, treeOf(root), files) as Map<string, string>;
     const before = keys();
     const changed = (rel: string, text: string) => {
@@ -316,7 +320,7 @@ test("a test file's key holds what the app's code reads at run time, and what a 
     const grep = ['test/unit/grep.test.ts', 'test/unit/hand.test.ts'];
     assert.deepEqual(changed('runner/src/experiments/a.md', 'b\n'), ['test/unit/app.test.ts', ...grep], 'a folder beside the code');
     assert.deepEqual(changed('runner/src/experiments/new.md', 'n\n'), ['test/unit/app.test.ts', ...grep], 'a new file in it');
-    assert.deepEqual(changed('docs/guide.md', '# new\n'), ['test/unit/app.test.ts', ...grep], 'a path the code joins');
+    assert.deepEqual(changed('docs/guide.md', '# new\n'), ['test/unit/app.test.ts', ...grep], 'a path the code joins, but not one threadbear-mcp.ts only checks is there');
     assert.deepEqual(changed('runner/src/child-dep.ts', 'export const x = 2;\n'), ['test/unit/app.test.ts', ...grep], "a script it starts, and that script's imports");
     assert.deepEqual(changed('relay/convex/b.ts', 'x\n'), ['test/unit/walk.test.ts', 'test/unit/names.test.ts', ...grep], 'a folder named in a list');
     assert.deepEqual(changed('convex/c.ts', 'x\n'), ['test/unit/walk.test.ts', ...grep], 'a new file in a folder named bare in a list');
