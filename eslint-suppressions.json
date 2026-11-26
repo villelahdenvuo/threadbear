@@ -351,6 +351,11 @@
       "count": 1
     }
   },
+  "runner/test/docs/docs-search.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
   "runner/test/e2e/codex-install.e2e.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
@@ -519,11 +524,6 @@
   "runner/test/unit/deploy-steps.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
-    }
-  },
-  "runner/test/docs/docs-search.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
     }
   },
   "runner/test/unit/frozen-cli.test.ts": {
