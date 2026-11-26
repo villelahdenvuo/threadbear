@@ -1218,7 +1218,7 @@ impl SettingsWindow {
             cx,
             |_, on, cx| {
                 crate::reply_links::set_prs_in_pane(on);
-                cx.notify();
+                cx.refresh_windows();
             },
         );
         let current = self.app.upgrade().map_or(Mode::Shared, |a| {
