@@ -950,8 +950,12 @@ impl SidePane {
             }
             return;
         }
-        // A PR opens as its own tab here.
-        if let (Some(_), Some(thread)) = (crate::pr_view::pr_url(url), self.thread(cx)) {
+        // A PR opens as its own tab here, unless Settings says otherwise.
+        if let (true, Some(_), Some(thread)) = (
+            crate::reply_links::prs_in_pane(),
+            crate::pr_view::pr_url(url),
+            self.thread(cx),
+        ) {
             self.open_pr(url, &thread, cx);
             return;
         }

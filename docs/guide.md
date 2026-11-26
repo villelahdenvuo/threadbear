@@ -1209,7 +1209,9 @@ files out of Highlights into other apps.
 
 A GitHub pull request link clicked in a reply, or in Highlights' Links,
 opens as a tab in the panel instead of your browser (⌘-click still goes to
-the browser). In the desktop app only, and it needs the `gh` command line
+the browser). To turn this off, go to Settings > General > Panels and
+switch off Open pull requests in the pane; a PR link then opens like any
+other web link. In the desktop app only, and it needs the `gh` command line
 tool installed and signed in (`gh auth login`); it acts on GitHub as
 whoever that is. A PR link in a reply has GitHub's pull request mark before
 it: green while it's open, grey as a draft, purple once merged and red if

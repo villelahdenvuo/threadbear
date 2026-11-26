@@ -734,7 +734,6 @@ impl SettingsWindow {
         let mut sections = vec![
             self.appearance_section(cx),
             self.panels_section(cx),
-            self.panel_layout_section(cx),
             self.quitting_section(cx),
             self.notifications_section(cx),
         ];
@@ -1190,14 +1189,18 @@ impl SettingsWindow {
         )
     }
 
-    /// Whether a press held on a panel's background picks it up, or only one
-    /// on its title or tab (`panelBackgroundDrag`, off to begin with).
+    /// Panels: whether a press held on a panel's background picks it up, or
+    /// only one on its title or tab (`panelBackgroundDrag`, off to begin
+    /// with); one panel layout for everything, or one per project
+    /// (panel_layouts.rs); and whether a PR link opens as a tab in the pane
+    /// (`prsInPane`, on to begin with).
     fn panels_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        use crate::panel_layouts::{self as layouts, Mode};
         let on = self
             .app
             .upgrade()
             .is_some_and(|a| a.read(cx).settings.panel_background_drag());
-        let switch = self.switch(
+        let drag = self.switch(
             "settings-panel-background-drag",
             on,
             "Press and hold anywhere on a panel to move it, not just on its title or tab",
@@ -1208,19 +1211,16 @@ impl SettingsWindow {
                     .ok();
             },
         );
-        section(
-            "settings-panels",
-            "Panels",
-            "To move a panel, drag its title or tab. With this on, pressing and holding anywhere on a panel picks it up too. A panel with its title hidden can always be moved that way, as it has nothing else to drag it by.",
-            "change it for you.",
-            vec![row("Move panels by their background", switch, cx)],
+        let prs = self.switch(
+            "settings-prs-in-pane",
+            crate::reply_links::prs_in_pane(),
+            "Open a pull request link as a tab in the pane beside the thread",
             cx,
-        )
-    }
-
-    /// One panel layout for everything, or one per project (panel_layouts.rs).
-    fn panel_layout_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        use crate::panel_layouts::{self as layouts, Mode};
+            |_, on, cx| {
+                crate::reply_links::set_prs_in_pane(on);
+                cx.notify();
+            },
+        );
         let current = self.app.upgrade().map_or(Mode::Shared, |a| {
             layouts::default_mode(&a.read(cx).settings.saved)
         });
@@ -1248,12 +1248,22 @@ impl SettingsWindow {
                 }
                 menu
             });
+        let layout = div()
+            .id("settings-panel-layout-holder")
+            .test_support()
+            .a11y_role(Role::GenericContainer)
+            .aria_label(tip)
+            .child(menu);
         section(
-            "settings-panel-layout-section",
-            "Panel layout",
-            "Where you put the panels beside the thread. Shared: one layout for everything. Each project has its own: every project remembers where you put its panels, and they slide into place when you open one of its threads. A project starts from the shared layout. Threads in no project use the shared layout. To choose for one project, open one of its threads and use View > Panel Layout.",
+            "settings-panels",
+            "Panels",
+            "To move a panel, drag its title or tab. With Move panels by their background on, pressing and holding anywhere on a panel picks it up too. A panel with its title hidden can always be moved that way. Panel layout: Shared keeps one layout for everything. Each project has its own: every project remembers where you put its panels, and they slide into place when you open one of its threads. A project starts from the shared layout, and threads in no project use it. To choose for one project, open one of its threads and use View > Panel Layout. With Open pull requests in the pane off, a PR link opens like any other web link.",
             "change it for you.",
-            vec![row("Panel layout", div().id("settings-panel-layout-holder").test_support().a11y_role(Role::GenericContainer).aria_label(tip).child(menu), cx)],
+            vec![
+                row("Move panels by their background", drag, cx),
+                row("Panel layout", layout, cx),
+                row("Open pull requests in the pane", prs, cx),
+            ],
             cx,
         )
     }
