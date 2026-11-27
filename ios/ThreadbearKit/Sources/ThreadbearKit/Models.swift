@@ -623,7 +623,7 @@ public struct PhoneMessage: Codable, Sendable, Hashable, Identifiable {
     /// the Mac does, the question small over the answer.
     public var answers: [AskAnswer]?
     /// On a note: the thread moving between the inbox, hibernating and the
-    /// archive (backend API 100), drawn as the Mac's move divider.
+    /// archive (backend API 106), drawn as the Mac's move divider.
     public var move: ThreadMove?
     /// Why the runner sent its own message (origin "runner"), in a few
     /// words: "Codex answered" (backend API 98). A turn it started gets

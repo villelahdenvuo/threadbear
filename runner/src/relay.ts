@@ -206,7 +206,7 @@ export type RelayRow = {
   pictures?: number;
   // The asks a user's message answered (API 89).
   answers?: AskAnswer[];
-  // A note's move between the inbox, hibernating and the archive (API 100).
+  // A note's move between the inbox, hibernating and the archive (API 106).
   move?: { from: string; to: string; by: string };
   // Why the runner sent its own message (API 98): its note's header.
   wakeReason?: string;
@@ -462,7 +462,7 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
       // That runner's thread moved to another login, or is waiting for
       // room: the app keeps these on show (is_login_note in
       // desktop/core/src/reducer/row.rs). Saved-message notices come over too.
-      // A move (API 100) is drawn as the Mac's move divider.
+      // A move (API 106) is drawn as the Mac's move divider.
       const move = r.move && PLACES.has(r.move.from) && PLACES.has(r.move.to) ? { from: r.move.from, to: r.move.to, by: MOVERS.has(r.move.by) ? r.move.by : 'threadbear' } : undefined;
       out.push(env(base + 1, r, move ? { type: 'system.note', text: r.text, move } : { type: 'system.note', text: r.text, login: true }));
     } else if (r.role !== 'tool') {

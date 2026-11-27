@@ -133,6 +133,7 @@ function byHand(r: Rec, e: PlaceEvent): void {
       r.hibernatedForApp = true;
       return;
     case 'forRuns':
+      del('snoozedByAgent');
       r.waitingOnRuns = e.keys;
       return;
     case 'checked': {

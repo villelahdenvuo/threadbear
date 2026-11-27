@@ -422,7 +422,7 @@ data class PhoneMessage(
     val at: Instant,
     /** A Plan first plan in full (backend API 72): drawn as a plan card, never folded into the turn's working. */
     val plan: Boolean = false,
-    /** On a note: the thread moving between the inbox, hibernating and the archive (backend API 100), drawn as the Mac's move divider. */
+    /** On a note: the thread moving between the inbox, hibernating and the archive (backend API 106), drawn as the Mac's move divider. */
     val move: ThreadMove? = null,
     /** Why the runner sent its own message, in a few words (backend API 98): "Codex answered". */
     val wakeReason: String? = null,

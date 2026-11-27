@@ -575,7 +575,7 @@ export type PhoneAsk = { action: string; why?: string; reply?: string; options?:
 // API 2): what the phone and the website show of a thread.
 export type WokeByDoc = { kind: string; description: string };
 export type MessageDoc = { threadId: string; seq: number; role: 'user' | 'assistant' | 'tool' | 'note'; text: string; origin?: string; toolKind?: string; summary?: true; plan?: true; planDecision?: 'go' | 'revise'; turn?: string; wokeBy?: WokeByDoc[]; buttons?: MessageButton[]; pictures?: number; answers?: AskAnswer[]; move?: MoveDoc; wakeReason?: string; at: string; pagedAt?: number };
-// Where a thread moved, on its note's row (API 100).
+// Where a thread moved, on its note's row (API 106).
 export type MoveDoc = { from: string; to: string; by: string };
 // A reply button as a message row carries it (API 59): enough to draw it
 // and say where it goes, never its brief or message, which stay on the Mac.

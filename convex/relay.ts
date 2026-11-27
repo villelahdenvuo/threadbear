@@ -50,7 +50,7 @@ const relayRow = v.object({
   // The asks a user's message answered (API 89), so another Mac draws them
   // as answers.
   answers: v.optional(v.array(v.object({ action: v.string(), answer: v.string() }))),
-  // A note's move (API 100).
+  // A note's move (API 106).
   move: v.optional(v.object({ from: v.string(), to: v.string(), by: v.string() })),
   // Why the runner sent its own message (API 98), so another Mac heads its
   // note as that runner's own Mac does.

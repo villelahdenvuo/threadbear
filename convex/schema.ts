@@ -795,7 +795,7 @@ export const appSchema = defineSchema({
     // the pick (since API 89), so the phone draws them as answers, as the Mac does.
     answers: v.optional(v.array(v.object({ action: v.string(), answer: v.string() }))),
     // A note's move between the inbox, hibernating and the archive, for the
-    // phone's move divider (since API 100).
+    // phone's move divider (since API 106).
     move: v.optional(v.object({ from: v.string(), to: v.string(), by: v.string() })),
     // Why the runner sent its own message (origin "runner"), a few words
     // (since API 98): the header of its quiet note, as the Mac draws it.

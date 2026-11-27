@@ -1853,7 +1853,7 @@ const messageDoc = v.object({
   buttons: v.optional(v.array(messageButton)), // API 59
   pictures: v.optional(v.number()), // API 87: how many pictures a user's message came with
   answers: v.optional(v.array(v.object({ action: v.string(), answer: v.string() }))), // API 89: the asks a user's message answered
-  move: v.optional(v.object({ from: v.string(), to: v.string(), by: v.string() })), // API 100: a note's move between the inbox, hibernating and the archive
+  move: v.optional(v.object({ from: v.string(), to: v.string(), by: v.string() })), // API 106: a note's move between the inbox, hibernating and the archive
   wakeReason: v.optional(v.string()), // API 98: why the runner sent its own message
   at: v.string(),
   pagedAt: v.optional(v.number()), // an old phone asked for it (loadEarlier): phone:thread shows it for a day

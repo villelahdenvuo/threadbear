@@ -402,31 +402,6 @@ the owning runner.
   a spare, `borrow-worktree.sh` reads the thread records in the runner's
   data dir (`threads/*/thread.json`, through `runner/src/lived-in.ts`) to
   pass over any slot an open thread works in.
-- **Clearing build output** (`runner/src/disk-cleanup.ts`, the
-  `diskCleanup` experiment, off unless `runner.json` turns it on): five
-  minutes after the runner starts and then hourly, it deletes Threadbear's
-  own build output. In worktree slots (`<repo>-threads/slot-<n>`) that is a
-  folder one or two levels down that cargo marked with `CACHEDIR.TAG` and
-  git ignores (`desktop/target`), never one the patch's `keep` names: in a
-  spare at once, in an archived thread's worktree that stays, and in an
-  open thread's after two idle days. In `~/Library/Caches/Threadbear`
-  (`~/.cache/threadbear` on Linux) it is `update-desktop/target`,
-  `check-desktop-target` and each folder in `ios-builds` (not `appstore`),
-  and each `shared-<n>` build folder in
-  `~/.cache/threadbear-check/local-builds` while its lock is free (moved
-  aside holding it), once unused for a week. Every ten minutes and before each runner update
-  build it reads the free space on your home folder's disk; under 10 GB,
-  it deletes all of these that aren't in use, open threads idle for two
-  hours included, until 20 GB is free. It skips anything a process has its
-  current folder in (`lsof`, or `/proc` on Linux), whose cargo build lock
-  (`.cargo-lock`) or Threadbear build lock (`build.lock`) another process
-  holds (probed with `lockf`, or `flock` on Linux), whose update build
-  holds `update-desktop/lock`, or that was written in the last half hour.
-  Each folder is renamed to `.threadbear-clearing-*` beside it, then
-  deleted; one a stopped runner left goes at the next look. It never
-  touches the main checkout, a borrowed worktree, or anything outside
-  these folders. The runner's log lists what went and the free space
-  before and after.
 - **The runner** listens on `127.0.0.1:8797` only, and needs a token
   (`runner/src/config.ts`). It starts the official `claude` and `codex`
   CLIs for your threads. Each thread's CLI gets a key of its own in its
