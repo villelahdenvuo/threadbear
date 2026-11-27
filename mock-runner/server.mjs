@@ -816,6 +816,13 @@ function addLivePageDemo(page) {
 // GitHub for the PR tab, made up: one open PR whose checks
 // have a failure, which Close turns closed a moment later, as gh would.
 const MOCK_PR_URL = 'https://github.com/acme/app/pull/72';
+// The landing rebuild's PRs, as github.prStatus gives them.
+const MOCK_PR_STATUS = {
+  'https://github.com/alex-example/site/pull/48': { title: 'Rebuild the home page on the new hero', state: 'open', ci: 'passed', review: 'approved', mergeable: 'yes', unresolved: 0, updatedAt: new Date(Date.now() - 20 * 60_000).toISOString() },
+  'https://github.com/alex-example/site/pull/49': { title: 'Pricing cards from the new design', state: 'open', ci: 'failed', review: 'changes', mergeable: 'conflicts', unresolved: 3, updatedAt: new Date(Date.now() - 45 * 60_000).toISOString() },
+  'https://github.com/alex-example/site/pull/50': { title: 'Docs page: new sidebar and search', state: 'draft', ci: 'pending', review: '', mergeable: 'unknown', unresolved: 0, updatedAt: new Date(Date.now() - 5 * 60_000).toISOString() },
+  'https://github.com/alex-example/site/pull/44': { title: 'Move the landing pages to Astro 5', state: 'merged', ci: 'passed', review: 'approved', mergeable: 'yes', unresolved: 0, updatedAt: new Date(Date.now() - 26 * 3600_000).toISOString() },
+};
 const mockPr = {
   url: MOCK_PR_URL, owner: 'acme', repo: 'app', number: 72, title: 'Fewer approvals when a fork brings in a release', author: 'ianmacartney',
   state: 'open', head: 'approvals-fixes', base: 'main', additions: 33, deletions: 11, changedFiles: 2,
@@ -2171,6 +2178,16 @@ async function dispatch(client, method, p) {
       return { files: mockPr.files };
     case 'github.prStates':
       return { states: Object.fromEntries((p.urls ?? []).filter((u) => String(u).startsWith(MOCK_PR_URL)).map((u) => [u, mockPr.state])) };
+    // Highlights' Pull requests (docs/protocol/panels.md): the demo PRs'
+    // made-up status, one of each look; a PR it doesn't know is left out.
+    case 'github.prStatus':
+      return { prs: Object.fromEntries((p.urls ?? []).filter((u) => MOCK_PR_STATUS[u]).map((u) => [u, MOCK_PR_STATUS[u]])) };
+    case 'prWatch.set': {
+      const t = need(p.threadId);
+      const list = highlights.get(t.summary.id);
+      for (const h of list?.highlights ?? []) if (h.kind === 'pr' && (p.urls ?? []).includes(h.url)) h.watched = Boolean(p.on);
+      return { watched: (list?.highlights ?? []).filter((h) => h.kind === 'pr' && h.watched).map((h) => h.url) };
+    }
     case 'github.prAct': {
       await new Promise((resolve) => setTimeout(resolve, 400));
       if (p.action === 'close') mockPr.state = 'closed';
@@ -2788,7 +2805,7 @@ async function dispatch(client, method, p) {
     case 'mock.approval': {
       const t = need(p.threadId);
       const approvalId = 'ap_' + crypto.randomBytes(4).toString('hex');
-      persist(t.summary.id, { type: 'approval.requested', approvalId, name: 'Bash', title: p.title ?? 'rm -rf build/', input: { command: p.title ?? 'rm -rf build/' }, options: ['allow', 'allowAlways', 'deny'] });
+      persist(t.summary.id, { type: 'approval.requested', approvalId, name: 'Bash', title: p.title ?? 'rm -rf build/', input: { command: p.title ?? 'rm -rf build/' }, options: ['allow', 'allowAlways', 'deny'], ...(p.reason ? { reason: p.reason } : {}), ...(p.source ? { source: p.source } : {}) });
       setStatus(t.summary.id, 'waiting', true);
       t.approvalWaiters ??= new Map();
       t.approvalWaiters.set(approvalId, () => setStatus(t.summary.id, 'idle', false));
@@ -4764,6 +4781,9 @@ The new hero is shorter, and every page now leads with what the app does.
         h(9, { id: `file:${home}`, kind: 'file', title: 'home.html', path: home, how: 'pinned', show: true,
           note: 'The new hero with the three plan cards under it. Is the headline too long?' }),
         h(9, { id: 'pr:https://github.com/alex-example/site/pull/48', kind: 'pr', title: 'alex-example/site#48', url: 'https://github.com/alex-example/site/pull/48', how: 'created' }),
+        h(9, { id: 'pr:https://github.com/alex-example/site/pull/49', kind: 'pr', title: 'alex-example/site#49', url: 'https://github.com/alex-example/site/pull/49', how: 'created', watched: true }),
+        h(9, { id: 'pr:https://github.com/alex-example/site/pull/50', kind: 'pr', title: 'alex-example/site#50', url: 'https://github.com/alex-example/site/pull/50', how: 'created' }),
+        h(3, { id: 'pr:https://github.com/alex-example/site/pull/44', kind: 'pr', title: 'alex-example/site#44', url: 'https://github.com/alex-example/site/pull/44', how: 'mentioned' }),
         // No branch: an agent's `git commit -q` then `git log --oneline -1`
         // prints none, which is most commits in real threads.
         h(8, { id: 'commit:4b7d0a8', kind: 'commit', title: 'Pricing cards from the new design', sha: '4b7d0a8', how: 'committed' }),
@@ -4777,6 +4797,12 @@ The new hero is shorter, and every page now leads with what the app does.
       ],
       edited: ['src/components/PlanCard.astro', 'src/pages/pricing.astro', 'src/components/Hero.astro', 'src/pages/index.astro', 'src/styles/landing.css']
         .map((rel) => path.join(root, rel)),
+      // GitHub Actions runs the thread set off (Highlights' Runs), newest first.
+      runs: [
+        { id: '9001', workflow: 'CI', status: 'running', url: 'https://github.com/alex-example/site/actions/runs/9001', sha: '4b7d0a8', branch: 'pricing-cards', event: 'push', at: new Date(Date.now() - 3 * 60_000).toISOString() },
+        { id: '8997', workflow: 'Preview deploy', status: 'failed', url: 'https://github.com/alex-example/site/actions/runs/8997', sha: '4b7d0a8', branch: 'pricing-cards', event: 'pull_request', at: new Date(Date.now() - 40 * 60_000).toISOString() },
+        { id: '8990', workflow: 'CI', status: 'passed', url: 'https://github.com/alex-example/site/actions/runs/8990', sha: '9f3c2e1', branch: 'landing-rebuild', event: 'push', at: new Date(Date.now() - 70 * 60_000).toISOString() },
+      ],
       brief: { text: 'The home page is rebuilt and pushed. Pricing and docs are still with their sub-agents, and the plan prices are placeholders until Alex sends the real ones.', at: iso() },
     });
     // A list panel, as a project's patch with an `items` function gives one.
