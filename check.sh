@@ -770,7 +770,7 @@ if [ "$APP_ONLY" = 0 ]; then
   fi
   # The runner's tests load convex/server and the state machines library from
   # the root's packages (test/helpers/convex-memory.ts), --runner too.
-  if [ "$RUNNER_ONLY" = 1 ] && [ ! -d "$ROOT/node_modules" ]; then
+  if [ "$RUNNER_ONLY" = 1 ] && ! packages_ready "$ROOT"; then
     step "convex packages" "$ROOT" npm ci --no-audit --no-fund
   fi
   step "runner typecheck" "$ROOT/runner" npm run typecheck
