@@ -45,6 +45,7 @@ const STATES: Record<string, PlaceFields> = {
 
 const EVENTS: Record<string, PlaceEvent> = {
   snoozeTime: { kind: 'snooze', until: { kind: 'time', at: FUTURE } },
+  snoozeTimeAgent: { kind: 'snooze', until: { kind: 'time', at: FUTURE, by: 'agent' } },
   snoozeRestart: { kind: 'snooze', until: { kind: 'restart' } },
   snoozeRelease: { kind: 'snooze', until: { kind: 'restart', release: 'r2' } },
   unsnooze: { kind: 'unsnooze' },
@@ -89,14 +90,17 @@ type Rec = Record<string, unknown>;
 // update, sendTo and the end of a turn, hibernation.ts, reviews.ts), on a
 // copy of the fields.
 function byHand(r: Rec, e: PlaceEvent): void {
-  const sleepDetail = ['snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp', 'waitingOnRuns'];
+  const sleepDetail = ['snoozedUntilRestart', 'untilRelease', 'wakeWhen', 'waitingOn', 'hibernatedForApp', 'snoozedByAgent', 'waitingOnRuns'];
   const bucket = () => (r.archivedAt ? 'archived' : r.snoozedUntil && Date.parse(r.snoozedUntil as string) > NOW ? 'snoozed' : 'inbox');
   const del = (...ks: string[]) => ks.forEach((k) => delete r[k]);
   switch (e.kind) {
     case 'snooze':
       if (bucket() !== 'snoozed') r.snoozedAt = ISO;
       del('woke', ...sleepDetail);
-      if (e.until.kind === 'time') r.snoozedUntil = e.until.at;
+      if (e.until.kind === 'time') {
+        r.snoozedUntil = e.until.at;
+        if (e.until.by === 'agent') r.snoozedByAgent = true;
+      }
       else {
         r.snoozedUntil = UNTIL_RESTART;
         r.snoozedUntilRestart = true;
@@ -107,6 +111,7 @@ function byHand(r: Rec, e: PlaceEvent): void {
       del('woke', ...sleepDetail, 'snoozedUntil');
       return;
     case 'wordsAsked':
+      del('snoozedByAgent');
       r.wakeWhen = { said: e.said, pending: true, ...(e.by ? { by: e.by } : {}) };
       return;
     case 'wordsAnswered': {
@@ -120,9 +125,11 @@ function byHand(r: Rec, e: PlaceEvent): void {
       del('snoozedUntil', 'wakeWhen');
       return;
     case 'waitOn':
+      del('snoozedByAgent');
       r.waitingOn = e.waits;
       return;
     case 'forApp':
+      del('snoozedByAgent');
       r.hibernatedForApp = true;
       return;
     case 'forRuns':
@@ -243,6 +250,7 @@ const VALUES: { [K in keyof PlaceFields]-?: unknown[] } = {
   wakeWhen: [{ said: 'x', pending: true }, { said: 'x', topic: 't', by: 'agent' }, 'nonsense'],
   waitingOn: [[wait('a')], [], 'x'],
   hibernatedForApp: [true, false],
+  snoozedByAgent: [true, false],
   waitingOnRuns: [['commit:abc1234'], [], 'x'],
   snoozedAt: [EARLIER],
   woke: [{ at: PAST }],

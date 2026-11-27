@@ -797,14 +797,12 @@ With `keep`:
   again. Only while the folder is still the thread's own checkout, and only
   real folders inside it, never through a link; each is renamed aside right
   after that check, then deleted.
-- Build output that isn't kept (cargo's `desktop/target`) would only go at
-  the next claim's `git clean`, so spares sat on it: on 25 Nov 2026 about
-  13 GB in Ville's slots, with his disk down to 564 MB and the runner's
-  update failing. With the `diskCleanup` experiment on, the runner clears
-  it from spares, archived threads' kept worktrees and long-idle open
-  threads' worktrees by itself, never while a process, cargo's build lock
-  or a recent write says it's in use (`runner/src/disk-cleanup.ts`,
-  docs/on-your-mac.md, "Clearing build output").
+- With the `buildCacheCleanup` experiment on (`runner/src/build-cache-cleanup.ts`),
+  an hourly sweep also clears git-ignored Cargo `CACHEDIR.TAG` build folders
+  (like `desktop/target`) not listed in `keep` from spare, kept-archived and
+  long-idle open worktrees (plus stale shared build caches under
+  `~/Library/Caches/Threadbear` and `~/.cache/threadbear-check/local-builds`),
+  and sweeps aggressively whenever free disk drops below 10 GiB.
 - The record keeps `keep`, and `spare: true` once it's set aside. What the
   record says of the worktree (held, cleanup owed, removed, handed on) is
   one state type in `runner/src/slot.ts`, with every write in its

@@ -233,19 +233,6 @@ test('a change to main is built and a restart asked for; the next check sees the
   assert.equal(h.deploys, 1);
 });
 
-test('disk is freed before each build, and a cleanup that throws does not stop it (disk-cleanup.ts)', async () => {
-  const buildsBefore: number[] = [];
-  const h: Harness = harness({}, {
-    beforeBuild: async () => {
-      buildsBefore.push(h.deploys);
-      throw new Error('no luck');
-    },
-  });
-  await h.u.check();
-  assert.deepEqual(buildsBefore, [0]);
-  assert.equal(h.deploys, 1);
-});
-
 test('a failed build or backend deploy goes to a fix thread instead of the notice, and to the notice when that fails', async () => {
   const failures: UpdateFailure[] = [];
   let handle: () => boolean = () => true;
@@ -1256,4 +1243,20 @@ test('a tb try is built in place of main, without its checks, and its failure is
   await h2.u.check();
   assert.equal(failedThreads, 0);
   assert.match(h2.notices.at(-1) ?? '', /couldn't build the tb try of thread\/abc: tsc failed/);
+});
+
+test('beforeBuild runs ahead of deploy and its failure does not stop the build', async () => {
+  const order: string[] = [];
+  const h = harness({}, {
+    beforeBuild: async () => {
+      order.push('before');
+      throw new Error('disk check failed');
+    },
+    deploy: async () => {
+      order.push('deploy');
+      return { ok: false, error: 'boom', transient: true };
+    },
+  });
+  await h.u.check();
+  assert.deepEqual(order, ['before', 'deploy']);
 });

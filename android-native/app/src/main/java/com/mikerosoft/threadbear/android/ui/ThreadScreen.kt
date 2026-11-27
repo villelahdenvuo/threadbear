@@ -464,7 +464,7 @@ private fun StatusCard(vm: ThreadViewModel, thread: PhoneThread, messages: List<
     var picks by remember(thread.asksSeq) { mutableStateOf(mapOf<Int, Int>()) }
     // The card's Add details box: kept if the send's refused, as the card comes back.
     var note by remember(thread.asksSeq) { mutableStateOf("") }
-    var ticked by remember(lastSeq) { mutableStateOf(setOf<Int>()) }
+    var ticked by remember(lastSeq, thread.nextPick) { mutableStateOf(setOf<Int>()) }
     val plan = remember(pending, messages) { Plans.plan(pending, messages) }
     when {
         pending is PendingApproval.Approval && plan != null -> PlanApprovalCard(pending, plan, tapped(pending.id)) { vm.respond(pending.id, it) }
@@ -501,8 +501,15 @@ private fun StatusCard(vm: ThreadViewModel, thread: PhoneThread, messages: List<
         }
         done -> DoneCard(
             thread.next.orEmpty(), ticked, busy = answeredDone == lastSeq,
+            nextPick = thread.nextPick, nextSuggested = thread.nextSuggestedIndex,
             looseEnds = thread.looseEnds.orEmpty(), openThread = LocalPushThread.current,
-            tick = { i -> ticked = if (i in ticked) ticked - i else ticked + i },
+            tick = { i ->
+                ticked = when {
+                    i in ticked -> ticked - i
+                    thread.nextPickOne -> setOf(i)
+                    else -> ticked + i
+                }
+            },
             send = { val next = thread.next.orEmpty(); vm.sendFollowUps(ticked.sorted().mapNotNull { next.getOrNull(it) }, lastSeq) },
             archive = { model.change(thread.threadId, ThreadChange.Archive); leave() },
         )

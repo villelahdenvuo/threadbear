@@ -159,8 +159,8 @@ export type UpdateDeps = {
   watch?: (checkout: string, onChange: () => void) => () => void;
   // What's wrong with this machine, if anything (machine-trouble.ts).
   machineTrouble?: () => string | undefined;
-  // Runs before each build: frees disk if it's low (disk-cleanup.ts), so a
-  // build doesn't die partway on a full disk. A failure doesn't stop it.
+  // Runs before each build (e.g. build-cache-cleanup.ts) to free disk if
+  // it is low. A failure is logged and does not stop the build.
   beforeBuild?: () => Promise<unknown>;
   // The environment launchAgentBehind reads (process.env; tests replace it).
   env?: NodeJS.ProcessEnv;
